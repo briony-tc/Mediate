@@ -121,6 +121,7 @@
 						<div>
 							<p class="font-medium">
 								{disc.title}
+								{#if disc.season}<span class="text-gray-500">— Season {disc.season}</span>{/if}
 								{#if disc.year}<span class="text-gray-500">({disc.year})</span>{/if}
 							</p>
 							<p class="text-xs text-gray-500 uppercase">{disc.mediaType}</p>

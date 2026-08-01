@@ -11,11 +11,30 @@
 	let manualQuery = $state('');
 	let focusSignal = $state(0);
 
+	// TV shows are barcoded/tracked per season, but Watchmode search only
+	// returns the series - ask for a season number before confirming one.
+	let pendingCandidate = $state<Candidate | null>(null);
+	// bind:value on a type="number" input yields a number (or undefined when
+	// empty), not a string - don't treat this like a text input's value.
+	let seasonInput = $state<number | undefined>(undefined);
+
+	function isTv(candidate: Candidate) {
+		return candidate.type !== 'movie' && candidate.type !== 'short_film';
+	}
+
+	function guessSeasonNumber(title: string | null): number | null {
+		if (!title) return null;
+		const match = title.match(/(?:season|series)\s*0*(\d+)/i);
+		return match ? Number(match[1]) : null;
+	}
+
 	function resetFlow() {
 		candidates = [];
 		currentBarcode = null;
 		rawLookupTitle = null;
 		manualQuery = '';
+		pendingCandidate = null;
+		seasonInput = undefined;
 		focusSignal += 1;
 	}
 
@@ -34,6 +53,7 @@
 		currentBarcode = barcode;
 		rawLookupTitle = null;
 		candidates = [];
+		pendingCandidate = null;
 
 		const { response, data } = await postJson('/api/scan', { barcode });
 
@@ -65,6 +85,7 @@
 		message = `Searching for "${manualQuery}"…`;
 		currentBarcode = null;
 		rawLookupTitle = manualQuery;
+		pendingCandidate = null;
 
 		const { response, data } = await postJson('/api/search', { query: manualQuery });
 
@@ -79,17 +100,32 @@
 		message = candidates.length === 0 ? 'No matches found.' : 'Pick the correct match:';
 	}
 
-	async function confirmCandidate(candidate: Candidate) {
+	function selectCandidate(candidate: Candidate) {
+		if (isTv(candidate)) {
+			pendingCandidate = candidate;
+			seasonInput = guessSeasonNumber(rawLookupTitle) ?? undefined;
+			return;
+		}
+		confirmCandidate(candidate, null);
+	}
+
+	function confirmPendingSeason() {
+		if (!pendingCandidate) return;
+		confirmCandidate(pendingCandidate, seasonInput ?? null);
+	}
+
+	async function confirmCandidate(candidate: Candidate, season: number | null) {
 		status = 'loading';
 
 		const { response, data } = await postJson('/api/confirm', {
 			watchmodeId: candidate.id,
 			barcode: currentBarcode,
-			rawLookupTitle
+			rawLookupTitle,
+			season
 		});
 
 		if (response.status === 409) {
-			message = `"${candidate.name}" is already tracked.`;
+			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
 			status = 'idle';
 			resetFlow();
 			return;
@@ -101,7 +137,7 @@
 			return;
 		}
 
-		message = `Added "${data.disc.title}" as Not started.`;
+		message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''} as Not started.`;
 		status = 'idle';
 		resetFlow();
 	}
@@ -115,13 +151,38 @@
 
 	<p class="rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">{message}</p>
 
-	{#if candidates.length > 0}
+	{#if pendingCandidate}
+		<div class="space-y-2 rounded-md border p-3">
+			<p class="text-sm">
+				Which season is this? <span class="font-medium">{pendingCandidate.name}</span>
+			</p>
+			<div class="flex gap-2">
+				<input
+					type="number"
+					min="1"
+					bind:value={seasonInput}
+					placeholder="Season number"
+					class="w-32 rounded-md border p-2"
+				/>
+				<button
+					class="rounded-md border px-4 py-2"
+					onclick={confirmPendingSeason}
+					disabled={status === 'loading'}
+				>
+					Add
+				</button>
+				<button class="rounded-md border px-4 py-2" onclick={() => (pendingCandidate = null)}>
+					Cancel
+				</button>
+			</div>
+		</div>
+	{:else if candidates.length > 0}
 		<ul class="space-y-2">
 			{#each candidates as candidate (candidate.id)}
 				<li>
 					<button
 						class="w-full rounded-md border p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-						onclick={() => confirmCandidate(candidate)}
+						onclick={() => selectCandidate(candidate)}
 						disabled={status === 'loading'}
 					>
 						<span class="font-medium">{candidate.name}</span>

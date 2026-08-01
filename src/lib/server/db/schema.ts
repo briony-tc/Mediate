@@ -7,8 +7,12 @@ export const discs = sqliteTable('discs', {
 		.default('not_started'),
 	title: text('title').notNull(),
 	mediaType: text('media_type', { enum: ['movie', 'tv'] }).notNull(),
+	// TV seasons are sold/barcoded individually but share one Watchmode title
+	// (the series), so watchmodeId alone can't be unique - (watchmodeId,
+	// season) identifies a row; null season means "movie" or "whole series".
+	season: integer('season'),
 	year: integer('year'),
-	watchmodeId: integer('watchmode_id').notNull().unique(),
+	watchmodeId: integer('watchmode_id').notNull(),
 	imdbId: text('imdb_id'),
 	posterUrl: text('poster_url'),
 	genres: text('genres'),
