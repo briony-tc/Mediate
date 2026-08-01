@@ -20,9 +20,15 @@
 	}
 
 	function refocusIfNothingElseFocused() {
-		if (document.activeElement === document.body) {
-			inputEl?.focus();
-		}
+		// Deferred: at the moment `blur` fires, the browser hasn't finished
+		// moving focus to whatever was just clicked, so checking
+		// activeElement synchronously here would see it too early (or not at
+		// all) and steal focus back before the click's own focus lands.
+		setTimeout(() => {
+			if (document.activeElement === document.body) {
+				inputEl?.focus();
+			}
+		}, 0);
 	}
 </script>
 

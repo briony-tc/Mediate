@@ -1,5 +1,5 @@
 import { sep } from 'node:path';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../db';
 import { discs, unmatchedFiles } from '../db/schema';
 import { AUTO_MATCH_THRESHOLD, SUGGEST_THRESHOLD, findBestDiscMatch } from '../matching/match';
@@ -7,19 +7,37 @@ import { emit } from '../events';
 
 export type Tree = 'staging' | 'jellyfin';
 
+type ParsedMediaPath =
+	| { mediaType: 'movie'; title: string; season: null }
+	| { mediaType: 'tv'; title: string; season: number | null };
+
+/** Matches "Season 1", "Season 01", "Series 1" (UK boxsets), and "S1"/"S01". */
+function parseSeasonNumber(folderName: string): number | null {
+	const match = folderName.match(/(?:season|series)\s*0*(\d+)/i) ?? folderName.match(/^s0*(\d+)$/i);
+	return match ? Number(match[1]) : null;
+}
+
 /**
  * Both STAGING_PATH and JELLYFIN_PATH follow movies/<title>/*.mkv and
- * tv/<title>/<season #>/*.mkv - only the first two segments matter for matching.
+ * tv/<title>/<season #>/*.mkv. TV series are barcoded/tracked per season
+ * (see discs.season), so a bare tv/<title>/ folder with no season segment
+ * yet carries no actionable info and is ignored (returns null).
  */
-export function parseMediaPath(
-	relativePath: string
-): { mediaType: 'movie' | 'tv'; title: string } | null {
+export function parseMediaPath(relativePath: string): ParsedMediaPath | null {
 	const segments = relativePath.split(sep).filter(Boolean);
 	if (segments.length < 2) return null;
 
 	const [category, title] = segments;
-	if (category === 'movies') return { mediaType: 'movie', title };
-	if (category === 'tv') return { mediaType: 'tv', title };
+
+	if (category === 'movies') {
+		return { mediaType: 'movie', title, season: null };
+	}
+
+	if (category === 'tv') {
+		if (segments.length < 3) return null;
+		return { mediaType: 'tv', title, season: parseSeasonNumber(segments[2]) };
+	}
+
 	return null;
 }
 
@@ -74,10 +92,16 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 	if (!parsed) return;
 
 	const candidateStatus = tree === 'staging' ? 'not_started' : 'staged';
+	const conditions = [eq(discs.mediaType, parsed.mediaType), eq(discs.status, candidateStatus)];
+	if (parsed.mediaType === 'tv') {
+		conditions.push(
+			parsed.season === null ? isNull(discs.season) : eq(discs.season, parsed.season)
+		);
+	}
 	const candidates = db
 		.select()
 		.from(discs)
-		.where(and(eq(discs.mediaType, parsed.mediaType), eq(discs.status, candidateStatus)))
+		.where(and(...conditions))
 		.all();
 
 	const match = findBestDiscMatch(parsed.title, candidates);

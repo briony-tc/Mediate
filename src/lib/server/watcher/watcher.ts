@@ -4,14 +4,16 @@ import { serverEnv } from '../env';
 import { onFileSeen, type Tree } from './reconcile';
 
 /**
- * Only 'addDir' is watched, not 'add': the movies/<title>/*.mkv and
- * tv/<title>/<season>/*.mkv convention means individual files live one level
- * deeper than depth allows, so the title folder's own creation is the signal
- * we react to - matching happens at title granularity, not per-file.
+ * Only 'addDir' is watched, not 'add': individual files live one level
+ * deeper than depth allows, so a folder's own creation is the signal we
+ * react to - matching happens at folder granularity, not per-file. Depth 3
+ * covers movies/<title>/ (2 levels) and tv/<title>/<season>/ (3 levels) -
+ * TV is tracked per season (see discs.season), so the season folder itself
+ * needs to be visible, not just the show folder above it.
  */
 function watchTree(root: string, tree: Tree): FSWatcher {
 	const watcher = watch(root, {
-		depth: 2,
+		depth: 3,
 		ignoreInitial: false,
 		awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 200 }
 	});
