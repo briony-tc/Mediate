@@ -34,15 +34,34 @@ describe('parseMediaPath', () => {
 	it('parses a movie path', () => {
 		expect(parseMediaPath(['movies', 'Inception (2010)', 'Inception.mkv'].join(sep))).toEqual({
 			mediaType: 'movie',
-			title: 'Inception (2010)'
+			title: 'Inception (2010)',
+			season: null
 		});
 	});
 
-	it('parses a tv path, ignoring season depth', () => {
+	it('parses a tv path, extracting the season number', () => {
 		expect(parseMediaPath(['tv', 'Breaking Bad', 'Season 1', 'S01E01.mkv'].join(sep))).toEqual({
 			mediaType: 'tv',
-			title: 'Breaking Bad'
+			title: 'Breaking Bad',
+			season: 1
 		});
+	});
+
+	it('recognizes "Series N" and bare "SN" season folder names', () => {
+		expect(parseMediaPath(['tv', 'Doctor Who', 'Series 2', 'x.mkv'].join(sep))?.season).toBe(2);
+		expect(parseMediaPath(['tv', 'Breaking Bad', 'S03', 'x.mkv'].join(sep))?.season).toBe(3);
+	});
+
+	it('returns a null season when the season folder name is unrecognized', () => {
+		expect(parseMediaPath(['tv', 'Breaking Bad', 'Disc 1', 'x.mkv'].join(sep))).toEqual({
+			mediaType: 'tv',
+			title: 'Breaking Bad',
+			season: null
+		});
+	});
+
+	it('returns null for a bare tv show folder with no season segment yet', () => {
+		expect(parseMediaPath(['tv', 'Breaking Bad'].join(sep))).toBeNull();
 	});
 
 	it('returns null for paths outside the movies/tv convention', () => {
@@ -132,5 +151,26 @@ describe('onFileSeen', () => {
 		onFileSeen(absolute, ['movies', 'Unknown', 'x.mkv'].join(sep), 'staging');
 
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
+	it('links a season folder to the matching season row, not other seasons of the same show', () => {
+		const season1 = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
+		const season2 = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 2 });
+		const absolute = '/staging/tv/Breaking Bad/Season 2';
+
+		onFileSeen(absolute, ['tv', 'Breaking Bad', 'Season 2'].join(sep), 'staging');
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === season2.id)?.status).toBe('staged');
+		expect(rows.find((d) => d.id === season1.id)?.status).toBe('not_started');
+	});
+
+	it('ignores a bare tv show folder with no season info', () => {
+		seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
+
+		onFileSeen('/staging/tv/Breaking Bad', ['tv', 'Breaking Bad'].join(sep), 'staging');
+
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+		expect(testDb.select().from(discs).all()[0].status).toBe('not_started');
 	});
 });

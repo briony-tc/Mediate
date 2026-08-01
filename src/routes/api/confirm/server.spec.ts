@@ -67,7 +67,7 @@ describe('POST /api/confirm', () => {
 		expect(events[0].outcome).toBe('linked');
 	});
 
-	it('returns 409 without duplicating when the watchmodeId is already tracked', async () => {
+	it('returns 409 without duplicating when the same movie watchmodeId is confirmed twice', async () => {
 		getTitleDetails.mockResolvedValue({
 			id: 1,
 			title: 'Inception',
@@ -80,5 +80,53 @@ describe('POST /api/confirm', () => {
 
 		expect(response.status).toBe(409);
 		expect(testDb.select().from(discs).all()).toHaveLength(1);
+	});
+
+	it('allows tracking multiple seasons of the same TV series independently', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 2,
+			title: 'Breaking Bad',
+			type: 'tv_series',
+			genreNames: []
+		});
+
+		const season1 = await POST(makeRequest({ watchmodeId: 2, season: 1 }));
+		const season2 = await POST(makeRequest({ watchmodeId: 2, season: 2 }));
+
+		expect(season1.status).toBe(201);
+		expect(season2.status).toBe(201);
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows).toHaveLength(2);
+		expect(rows.map((r) => r.season).sort()).toEqual([1, 2]);
+	});
+
+	it('returns 409 without duplicating when the same series/season is confirmed twice', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 2,
+			title: 'Breaking Bad',
+			type: 'tv_series',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 2, season: 1 }));
+		const response = await POST(makeRequest({ watchmodeId: 2, season: 1 }));
+
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()).toHaveLength(1);
+	});
+
+	it('ignores a season value sent for a movie', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, season: 3 }));
+		const data = await response.json();
+
+		expect(data.disc.season).toBeNull();
 	});
 });
