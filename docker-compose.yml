@@ -3,10 +3,24 @@ services:
     build: .
     container_name: media-library-shelf
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - PORT=3000
+      - DB_PATH=/data/media-library.db
+      - STAGING_PATH=/media/staging
+      - JELLYFIN_PATH=/media/jellyfin
+    volumes:
+      - media-library-db:/data
+      # Set STAGING_HOST_PATH / JELLYFIN_HOST_PATH in .env to the real host
+      # folders MakeMKV rips into and Jellyfin serves from.
+      - ${STAGING_HOST_PATH}:/media/staging
+      - ${JELLYFIN_HOST_PATH}:/media/jellyfin
     networks:
       - proxy
+
+volumes:
+  media-library-db:
 
 networks:
   proxy:
