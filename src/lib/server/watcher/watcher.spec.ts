@@ -144,4 +144,36 @@ describe('watcher', () => {
 		startWatcher();
 		expect(() => startWatcher()).not.toThrow();
 	});
+
+	it('detects a TV season folder and links only the matching season', async () => {
+		mkdirSync(join(stagingRoot, 'tv'), { recursive: true });
+		const [season1] = testDb
+			.insert(discs)
+			.values({ title: 'Breaking Bad', mediaType: 'tv', season: 1, watchmodeId: 10 })
+			.returning()
+			.all();
+		const [season2] = testDb
+			.insert(discs)
+			.values({ title: 'Breaking Bad', mediaType: 'tv', season: 2, watchmodeId: 10 })
+			.returning()
+			.all();
+
+		startWatcher();
+		await new Promise((resolve) => setTimeout(resolve, 300));
+
+		mkdirSync(join(stagingRoot, 'tv', 'Breaking Bad', 'Season 2'), { recursive: true });
+
+		await waitFor(() => {
+			const row = testDb
+				.select()
+				.from(discs)
+				.all()
+				.find((d) => d.id === season2.id);
+			return row?.status === 'staged';
+		});
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === season2.id)?.status).toBe('staged');
+		expect(rows.find((d) => d.id === season1.id)?.status).toBe('not_started');
+	});
 });
