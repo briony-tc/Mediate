@@ -160,13 +160,70 @@ describe('onFileSeen', () => {
 		expect(disc.stagedAt).toBe(123);
 	});
 
-	it('does not reprocess a path already recorded in unmatchedFiles', () => {
+	it('does not reprocess a path already resolved (linked) in unmatchedFiles', () => {
 		const absolute = '/staging/movies/Unknown/x.mkv';
-		testDb.insert(unmatchedFiles).values({ path: absolute, tree: 'staging' }).run();
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'linked' })
+			.run();
 
 		onFileSeen(absolute, ['movies', 'Unknown', 'x.mkv'].join(sep), 'staging');
 
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
+	it('does not reprocess a path already resolved (ignored) in unmatchedFiles', () => {
+		const absolute = '/staging/movies/Unknown/x.mkv';
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'ignored' })
+			.run();
+
+		onFileSeen(absolute, ['movies', 'Unknown', 'x.mkv'].join(sep), 'staging');
+
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
+	it('retries a path still unresolved and auto-links it if it now matches (e.g. after a matching-logic fix)', () => {
+		const disc = seedDisc({ title: 'Inception', status: 'not_started' });
+		const absolute = '/staging/movies/Inception/Inception.mkv';
+		const [existing] = testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'unresolved' })
+			.returning()
+			.all();
+
+		onFileSeen(absolute, ['movies', 'Inception', 'Inception.mkv'].join(sep), 'staging');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('staged');
+		// the stale unmatched row is cleaned up once it resolves
+		expect(
+			testDb
+				.select()
+				.from(unmatchedFiles)
+				.all()
+				.find((u) => u.id === existing.id)
+		).toBeUndefined();
+	});
+
+	it('retries a still-unresolved path and refreshes its best guess without duplicating the row', () => {
+		const absolute = '/staging/movies/Unknown/x.mkv';
+		const [existing] = testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'unresolved' })
+			.returning()
+			.all();
+
+		onFileSeen(absolute, ['movies', 'Unknown', 'x.mkv'].join(sep), 'staging');
+
+		const rows = testDb.select().from(unmatchedFiles).all();
+		expect(rows).toHaveLength(1);
+		expect(rows[0].id).toBe(existing.id);
 	});
 
 	it('links a season folder to the matching season row, not other seasons of the same show', () => {
