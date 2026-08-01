@@ -1,5 +1,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+# better-sqlite3's shipped prebuilt binary isn't picked up in every
+# musl/Alpine environment; installing the toolchain lets node-gyp compile it
+# from source as a reliable fallback either way.
+RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 RUN npm ci
 COPY . .
