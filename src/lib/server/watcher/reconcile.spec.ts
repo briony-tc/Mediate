@@ -105,6 +105,22 @@ describe('onFileSeen', () => {
 		expect(updated?.completePath).toBe(absolute);
 	});
 
+	it('promotes not_started -> complete directly when content is found in jellyfin without ever being staged', () => {
+		// e.g. content ripped/placed before this app existed, scanned in afterward
+		const disc = seedDisc({ status: 'not_started' });
+		const absolute = '/jellyfin/movies/Inception/Inception.mkv';
+
+		onFileSeen(absolute, ['movies', 'Inception', 'Inception.mkv'].join(sep), 'jellyfin');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('complete');
+		expect(updated?.completePath).toBe(absolute);
+	});
+
 	it('records an unmatched file with a suggestion for a near-miss score', () => {
 		seedDisc({ title: 'Inception', status: 'not_started' });
 		const absolute = '/staging/movies/Inception Trailer/Inception Trailer.mkv';

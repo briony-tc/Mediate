@@ -145,6 +145,25 @@ describe('watcher', () => {
 		expect(() => startWatcher()).not.toThrow();
 	});
 
+	it('warns when a configured root has no movies/tv subfolder (misconfigured path)', () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		mockEnv.STAGING_PATH = join(stagingRoot, 'nonexistent-nested-root');
+
+		startWatcher();
+
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('STAGING_PATH'));
+		warnSpy.mockRestore();
+	});
+
+	it('does not warn when the configured roots are structured correctly', () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		startWatcher();
+
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+
 	it('detects a TV season folder and links only the matching season', async () => {
 		mkdirSync(join(stagingRoot, 'tv'), { recursive: true });
 		const [season1] = testDb

@@ -1,5 +1,5 @@
 import { sep } from 'node:path';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../db';
 import { discs, unmatchedFiles } from '../db/schema';
 import { AUTO_MATCH_THRESHOLD, SUGGEST_THRESHOLD, findBestDiscMatch } from '../matching/match';
@@ -91,8 +91,16 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 	const parsed = parseMediaPath(relativePath);
 	if (!parsed) return;
 
-	const candidateStatus = tree === 'staging' ? 'not_started' : 'staged';
-	const conditions = [eq(discs.mediaType, parsed.mediaType), eq(discs.status, candidateStatus)];
+	// Staging only promotes genuinely fresh discs. Jellyfin is authoritative
+	// proof of completion regardless of whether staging was ever observed for
+	// this disc (e.g. content ripped/placed before this app existed, then
+	// scanned in afterward) - so it matches both not_started and staged.
+	const conditions = [
+		eq(discs.mediaType, parsed.mediaType),
+		tree === 'staging'
+			? eq(discs.status, 'not_started')
+			: inArray(discs.status, ['not_started', 'staged'])
+	];
 	if (parsed.mediaType === 'tv') {
 		conditions.push(
 			parsed.season === null ? isNull(discs.season) : eq(discs.season, parsed.season)
