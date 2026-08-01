@@ -69,7 +69,11 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 /**
  * Called for every file/folder chokidar sees (both on startup baseline scan and
  * live changes). Idempotent: re-seeing a path already linked to a disc, or
- * already recorded in unmatchedFiles, is a no-op.
+ * already resolved (linked/ignored) in unmatchedFiles, is a no-op. A path
+ * still sitting at 'unresolved' is retried every time, since the reason it
+ * didn't match before (a matching bug, a disc not scanned in yet) can change
+ * without the file itself changing - a permanently "already tried" guard
+ * would leave it stuck forever even after a fix or a later scan.
  */
 export function onFileSeen(absolutePath: string, relativePath: string, tree: Tree) {
 	const alreadyLinked = db
@@ -81,12 +85,12 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 		.get();
 	if (alreadyLinked) return;
 
-	const alreadySeen = db
+	const existingUnmatched = db
 		.select()
 		.from(unmatchedFiles)
 		.where(eq(unmatchedFiles.path, absolutePath))
 		.get();
-	if (alreadySeen) return;
+	if (existingUnmatched && existingUnmatched.resolution !== 'unresolved') return;
 
 	const parsed = parseMediaPath(relativePath);
 	if (!parsed) return;
@@ -116,15 +120,23 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 
 	if (match && match.score >= AUTO_MATCH_THRESHOLD) {
 		applyStatusTransition(match.disc.id, tree, absolutePath);
+		if (existingUnmatched) {
+			db.delete(unmatchedFiles).where(eq(unmatchedFiles.id, existingUnmatched.id)).run();
+		}
 		return;
 	}
 
-	db.insert(unmatchedFiles)
-		.values({
-			path: absolutePath,
-			tree,
-			bestGuessDiscId: match && match.score >= SUGGEST_THRESHOLD ? match.disc.id : null,
-			bestGuessScore: match?.score ?? null
-		})
-		.run();
+	const bestGuessDiscId = match && match.score >= SUGGEST_THRESHOLD ? match.disc.id : null;
+	const bestGuessScore = match?.score ?? null;
+
+	if (existingUnmatched) {
+		db.update(unmatchedFiles)
+			.set({ bestGuessDiscId, bestGuessScore })
+			.where(eq(unmatchedFiles.id, existingUnmatched.id))
+			.run();
+	} else {
+		db.insert(unmatchedFiles)
+			.values({ path: absolutePath, tree, bestGuessDiscId, bestGuessScore })
+			.run();
+	}
 }
