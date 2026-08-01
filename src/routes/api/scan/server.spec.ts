@@ -13,9 +13,9 @@ vi.mock('$lib/server/clients/upc', () => ({
 	lookupUpc: (...args: unknown[]) => lookupUpc(...args)
 }));
 
-const searchTitles = vi.fn();
+const searchTitlesWithFallback = vi.fn();
 vi.mock('$lib/server/clients/watchmode', () => ({
-	searchTitles: (...args: unknown[]) => searchTitles(...args)
+	searchTitlesWithFallback: (...args: unknown[]) => searchTitlesWithFallback(...args)
 }));
 
 const { POST } = await import('./+server');
@@ -49,7 +49,7 @@ describe('POST /api/scan', () => {
 
 	it('logs ambiguous and returns candidates when watchmode returns multiple matches', async () => {
 		lookupUpc.mockResolvedValue({ title: 'Inception Widescreen DVD' });
-		searchTitles.mockResolvedValue([
+		searchTitlesWithFallback.mockResolvedValue([
 			{ id: 1, name: 'Inception', type: 'movie' },
 			{ id: 2, name: 'Inception 2', type: 'movie' }
 		]);
@@ -65,7 +65,7 @@ describe('POST /api/scan', () => {
 
 	it('does not log a scan event when there is exactly one clean match', async () => {
 		lookupUpc.mockResolvedValue({ title: 'Inception' });
-		searchTitles.mockResolvedValue([{ id: 1, name: 'Inception', type: 'movie' }]);
+		searchTitlesWithFallback.mockResolvedValue([{ id: 1, name: 'Inception', type: 'movie' }]);
 
 		await POST(makeRequest({ barcode: '883929127538' }));
 

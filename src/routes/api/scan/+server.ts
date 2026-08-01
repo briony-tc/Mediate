@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { lookupUpc } from '$lib/server/clients/upc';
-import { searchTitles } from '$lib/server/clients/watchmode';
+import { searchTitlesWithFallback } from '$lib/server/clients/watchmode';
 import { db } from '$lib/server/db';
 import { scanEvents } from '$lib/server/db/schema';
 
@@ -18,7 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ upcTitle: null, results: [] });
 	}
 
-	const results = await searchTitles(upcResult.title);
+	const results = await searchTitlesWithFallback(upcResult.title);
 	if (results.length === 0) {
 		db.insert(scanEvents)
 			.values({ barcode, upcTitle: upcResult.title, outcome: 'no_watchmode_match' })

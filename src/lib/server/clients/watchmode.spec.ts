@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mockEnv: Record<string, string | undefined> = {};
 vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 
-const { getTitleDetails, searchTitles, toMediaType } = await import('./watchmode');
+const { getTitleDetails, searchTitles, searchTitlesWithFallback, toMediaType } =
+	await import('./watchmode');
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -63,6 +64,71 @@ describe('searchTitles', () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 401 })));
 
 		await expect(searchTitles('x')).rejects.toThrow();
+	});
+});
+
+describe('searchTitlesWithFallback', () => {
+	it('returns first-attempt results without retrying when the full title matches', async () => {
+		mockEnv.WATCHMODE_API_KEY = 'test-key';
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(
+				new Response(
+					JSON.stringify({ title_results: [{ id: 1, name: 'Inception', type: 'movie' }] }),
+					{ status: 200 }
+				)
+			);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const results = await searchTitlesWithFallback('Inception');
+
+		expect(results).toHaveLength(1);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('retries with progressively shorter word-prefixes until something matches (real FernGully case)', async () => {
+		mockEnv.WATCHMODE_API_KEY = 'test-key';
+		const fetchMock = vi.fn(async (url: string) => {
+			const query = new URL(url).searchParams.get('search_value');
+			const matches = query === 'Ferngully';
+			return new Response(
+				JSON.stringify({
+					title_results: matches
+						? [{ id: 1661363, name: 'FernGully 2: The Magical Rescue', type: 'movie', year: 1998 }]
+						: []
+				}),
+				{ status: 200 }
+			);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const results = await searchTitlesWithFallback('Ferngully: The Magical Rescue');
+
+		expect(results).toEqual([
+			{
+				id: 1661363,
+				name: 'FernGully 2: The Magical Rescue',
+				type: 'movie',
+				year: 1998,
+				imdbId: undefined
+			}
+		]);
+		// "Ferngully The Magical Rescue" -> "Ferngully The Magical" -> "Ferngully The" -> "Ferngully"
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+	});
+
+	it('returns an empty array when nothing matches at any prefix length', async () => {
+		mockEnv.WATCHMODE_API_KEY = 'test-key';
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockImplementation(
+					async () => new Response(JSON.stringify({ title_results: [] }), { status: 200 })
+				)
+		);
+
+		expect(await searchTitlesWithFallback('Completely Unknown Title')).toEqual([]);
 	});
 });
 

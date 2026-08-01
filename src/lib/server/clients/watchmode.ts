@@ -63,6 +63,24 @@ export async function searchTitles(query: string): Promise<WatchmodeSearchResult
 	}));
 }
 
+/**
+ * Watchmode's search is closer to exact-match than fuzzy - a title that's
+ * even slightly off from Watchmode's own name (missing a word, wrong
+ * punctuation) can return zero results even though a shorter fragment of
+ * the same title matches fine (e.g. a UPC title missing a sequel's "2").
+ * Retries with progressively shorter word-prefixes until something matches.
+ */
+export async function searchTitlesWithFallback(title: string): Promise<WatchmodeSearchResult[]> {
+	const tokens = title.split(/[^a-z0-9]+/i).filter(Boolean);
+
+	for (let n = tokens.length; n >= 1; n--) {
+		const results = await searchTitles(tokens.slice(0, n).join(' '));
+		if (results.length > 0) return results;
+	}
+
+	return [];
+}
+
 export async function getTitleDetails(watchmodeId: number): Promise<WatchmodeTitleDetails> {
 	const url = `${BASE_URL}/title/${watchmodeId}/details/?apiKey=${encodeURIComponent(serverEnv.WATCHMODE_API_KEY)}`;
 
