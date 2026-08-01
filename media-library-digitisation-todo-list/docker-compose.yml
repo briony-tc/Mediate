@@ -1,0 +1,13 @@
+services:
+  media-library-shelf:
+    build: .
+    container_name: media-library-shelf
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
