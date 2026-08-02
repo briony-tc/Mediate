@@ -7,7 +7,7 @@
 
 	$effect(() => {
 		focusSignal;
-		inputEl?.focus();
+		inputEl?.focus({ preventScroll: true });
 	});
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -26,7 +26,7 @@
 		// all) and steal focus back before the click's own focus lands.
 		setTimeout(() => {
 			if (document.activeElement === document.body) {
-				inputEl?.focus();
+				inputEl?.focus({ preventScroll: true });
 			}
 		}, 0);
 	}
