@@ -57,9 +57,21 @@ export const scanEvents = sqliteTable('scan_events', {
 		.$defaultFn(() => Date.now())
 });
 
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	endpoint: text('endpoint').notNull().unique(),
+	p256dh: text('p256dh').notNull(),
+	auth: text('auth').notNull(),
+	createdAt: integer('created_at')
+		.notNull()
+		.$defaultFn(() => Date.now())
+});
+
 export type Disc = typeof discs.$inferSelect;
 export type NewDisc = typeof discs.$inferInsert;
 export type UnmatchedFile = typeof unmatchedFiles.$inferSelect;
 export type NewUnmatchedFile = typeof unmatchedFiles.$inferInsert;
 export type ScanEvent = typeof scanEvents.$inferSelect;
 export type NewScanEvent = typeof scanEvents.$inferInsert;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;

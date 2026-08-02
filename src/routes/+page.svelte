@@ -2,7 +2,13 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { DiscStore } from '$lib/stores/discs.svelte';
 	import LibraryStats from '$lib/components/LibraryStats.svelte';
-	import { filterDiscs, sortDiscs, type MediaTypeFilter, type SortKey, type StatusFilter } from '$lib/library';
+	import {
+		filterDiscs,
+		sortDiscs,
+		type MediaTypeFilter,
+		type SortKey,
+		type StatusFilter
+	} from '$lib/library';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -57,8 +63,45 @@
 		seedSelection(data.unmatchedFiles);
 	});
 
+	let pushSupported = $state(false);
+	let pushEnabled = $state(false);
+
+	// VAPID keys arrive base64url-encoded; the Push API wants raw bytes.
+	function urlBase64ToUint8Array(base64: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+		const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+		return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+	}
+
+	async function enablePush() {
+		const permission = await Notification.requestPermission();
+		if (permission !== 'granted') return;
+
+		const registration = await navigator.serviceWorker.ready;
+		const subscription = await registration.pushManager.subscribe({
+			userVisibleOnly: true,
+			applicationServerKey: urlBase64ToUint8Array(data.vapidPublicKey) as BufferSource
+		});
+
+		await fetch('/api/push/subscribe', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(subscription)
+		});
+		pushEnabled = true;
+	}
+
 	onMount(() => {
 		disconnect = discStore.connect();
+
+		if ('serviceWorker' in navigator && 'PushManager' in window) {
+			pushSupported = true;
+			navigator.serviceWorker.ready
+				.then((registration) => registration.pushManager.getSubscription())
+				.then((subscription) => {
+					pushEnabled = subscription !== null;
+				});
+		}
 	});
 
 	onDestroy(() => {
@@ -131,7 +174,17 @@
 </script>
 
 <div class="mx-auto max-w-3xl space-y-8 p-6">
-	<h1 class="text-2xl font-semibold">Library</h1>
+	<div class="flex items-center justify-between">
+		<h1 class="text-2xl font-semibold">Library</h1>
+		{#if pushSupported && !pushEnabled}
+			<button
+				class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+				onclick={enablePush}
+			>
+				Enable notifications
+			</button>
+		{/if}
+	</div>
 
 	<LibraryStats discs={discStore.discs} />
 
@@ -235,7 +288,10 @@
 								>
 									Confirm
 								</button>
-								<button class="rounded-md border px-2 py-1" onclick={() => (pendingRemoveId = null)}>
+								<button
+									class="rounded-md border px-2 py-1"
+									onclick={() => (pendingRemoveId = null)}
+								>
 									Cancel
 								</button>
 							</div>
