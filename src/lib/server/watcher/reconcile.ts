@@ -156,10 +156,15 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 
 		// Jellyfin is authoritative proof of completion regardless of whether
 		// staging was ever observed for this disc (e.g. content ripped/placed
-		// before this app existed, then scanned in afterward).
+		// before this app existed, then scanned in afterward). 'complete' is
+		// included too: the top-of-function alreadyLinked check only catches an
+		// unchanged completePath, so a disc whose Jellyfin folder gets renamed
+		// after completion (e.g. manual tidying to match Jellyfin's naming
+		// conventions) needs to still be a match candidate here, or the rename
+		// looks unmatched forever instead of just updating completePath.
 		const conditions = [
 			eq(discs.mediaType, parsed.mediaType),
-			inArray(discs.status, ['not_started', 'ripping', 'staged'])
+			inArray(discs.status, ['not_started', 'ripping', 'staged', 'complete'])
 		];
 		if (parsed.mediaType === 'tv') {
 			conditions.push(
