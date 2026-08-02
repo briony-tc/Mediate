@@ -211,6 +211,22 @@
 	<h1 class="text-2xl font-semibold">Scan a disc</h1>
 	<p class="text-sm text-gray-500">Point the scanner at the barcode — this page is listening.</p>
 
+	<form class="flex gap-2" onsubmit={handleManualSearch}>
+		<input
+			type="text"
+			bind:value={manualQuery}
+			placeholder="Search by title…"
+			class="flex-1 rounded-md border p-2"
+		/>
+		<button
+			type="submit"
+			class="rounded-md border px-4 py-2"
+			disabled={status === 'loading' || !manualQuery.trim()}
+		>
+			Search
+		</button>
+	</form>
+
 	<p class="rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">{message}</p>
 
 	{#if pendingCandidate}
@@ -297,20 +313,4 @@
 			{/each}
 		</ul>
 	{/if}
-
-	<form class="flex gap-2" onsubmit={handleManualSearch}>
-		<input
-			type="text"
-			bind:value={manualQuery}
-			placeholder="Search by title…"
-			class="flex-1 rounded-md border p-2"
-		/>
-		<button
-			type="submit"
-			class="rounded-md border px-4 py-2"
-			disabled={status === 'loading' || !manualQuery.trim()}
-		>
-			Search
-		</button>
-	</form>
 </div>
