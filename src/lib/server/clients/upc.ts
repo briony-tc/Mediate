@@ -2,6 +2,11 @@ import { serverEnv } from '../env';
 
 export type UpcLookupResult = { title: string };
 
+/** Thrown when UPCitemdb itself is unavailable (e.g. the free trial tier's
+ * daily rate limit) - distinct from a barcode simply having no listing, so
+ * callers can tell the user the service is down rather than "not found". */
+export class UpcLookupUnavailableError extends Error {}
+
 type UpcItemDbResponse = {
 	code: string;
 	items?: { title: string }[];
@@ -36,6 +41,9 @@ export async function lookupUpc(barcode: string): Promise<UpcLookupResult | null
 		headers: apiKey ? { user_key: apiKey, key_type: '3scale' } : undefined
 	});
 
+	if (response.status === 429) {
+		throw new UpcLookupUnavailableError('UPCitemdb rate limit exceeded');
+	}
 	if (!response.ok) {
 		throw new Error(`UPCitemdb request failed with status ${response.status}`);
 	}

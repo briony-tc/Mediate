@@ -116,10 +116,12 @@
 		loadPreviews(candidates);
 		status = 'idle';
 
-		if (data.upcTitle === null) {
-			message = `No product found for barcode ${barcode}. Search for the title manually below.`;
+		if (data.upcUnavailable) {
+			message = `Barcode lookup is temporarily unavailable (rate limit reached). Search for the title manually above.`;
+		} else if (data.upcTitle === null) {
+			message = `No product found for barcode ${barcode}. Search for the title manually above.`;
 		} else if (data.results.length === 0) {
-			message = `Found "${data.upcTitle}" but no matching title. Search manually below.`;
+			message = `Found "${data.upcTitle}" but no matching title. Search manually above.`;
 			manualQuery = data.upcTitle;
 		} else {
 			message = `Found "${data.upcTitle}" — pick the correct match:`;
