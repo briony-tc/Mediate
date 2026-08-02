@@ -1,0 +1,136 @@
+import type { Disc, DiscStatus } from '$lib/types';
+
+export type SortKey = 'updated' | 'title' | 'year' | 'status';
+export type MediaTypeFilter = 'all' | 'movie' | 'tv';
+export type StatusFilter = 'all' | DiscStatus;
+
+const STATUS_ORDER: Record<DiscStatus, number> = { not_started: 0, staged: 1, complete: 2 };
+
+export function filterDiscs(
+	discs: Disc[],
+	{
+		status,
+		mediaType,
+		query
+	}: { status: StatusFilter; mediaType: MediaTypeFilter; query: string }
+): Disc[] {
+	const needle = query.trim().toLowerCase();
+	return discs.filter((disc) => {
+		if (status !== 'all' && disc.status !== status) return false;
+		if (mediaType !== 'all' && disc.mediaType !== mediaType) return false;
+		if (needle && !disc.title.toLowerCase().includes(needle)) return false;
+		return true;
+	});
+}
+
+export function sortDiscs(discs: Disc[], sortKey: SortKey): Disc[] {
+	const sorted = discs.slice();
+	switch (sortKey) {
+		case 'title':
+			sorted.sort((a, b) => a.title.localeCompare(b.title));
+			break;
+		case 'year':
+			// Undated titles sort last rather than first (treated as "unknown", not "oldest").
+			sorted.sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity));
+			break;
+		case 'status':
+			sorted.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+			break;
+		case 'updated':
+		default:
+			sorted.sort((a, b) => b.updatedAt - a.updatedAt);
+			break;
+	}
+	return sorted;
+}
+
+export type StatusCounts = Record<DiscStatus, number> & { total: number };
+
+export function statusCounts(discs: Disc[]): StatusCounts {
+	const counts: StatusCounts = { not_started: 0, staged: 0, complete: 0, total: discs.length };
+	for (const disc of discs) {
+		counts[disc.status] += 1;
+	}
+	return counts;
+}
+
+export function mediaTypeCounts(discs: Disc[]): { movie: number; tv: number } {
+	const counts = { movie: 0, tv: 0 };
+	for (const disc of discs) {
+		counts[disc.mediaType] += 1;
+	}
+	return counts;
+}
+
+export function topGenres(discs: Disc[], limit = 6): { genre: string; count: number }[] {
+	const counts = new Map<string, number>();
+	for (const disc of discs) {
+		if (!disc.genres) continue;
+		let names: unknown;
+		try {
+			names = JSON.parse(disc.genres);
+		} catch {
+			continue;
+		}
+		if (!Array.isArray(names)) continue;
+		for (const name of names) {
+			if (typeof name !== 'string' || !name) continue;
+			counts.set(name, (counts.get(name) ?? 0) + 1);
+		}
+	}
+	return [...counts.entries()]
+		.map(([genre, count]) => ({ genre, count }))
+		.sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre))
+		.slice(0, limit);
+}
+
+export type GrowthBucket = { label: string; start: number; count: number };
+
+/**
+ * Buckets discs by createdAt into weekly periods (Monday-anchored, UTC) so the
+ * chart stays readable regardless of how the collection was scanned in over
+ * time. Empty weeks inside the range are included so bars stay evenly spaced;
+ * the range is capped to the most recent `maxBuckets` weeks since a
+ * years-long tail would otherwise squeeze every bar into illegibility.
+ */
+export function growthBuckets(discs: Disc[], maxBuckets = 12): GrowthBucket[] {
+	if (discs.length === 0) return [];
+
+	const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+	const weekStart = (ms: number) => {
+		const date = new Date(ms);
+		const day = date.getUTCDay();
+		// getUTCDay: 0=Sun..6=Sat; shift so Monday is the start of the week.
+		const diffToMonday = (day + 6) % 7;
+		const monday = new Date(
+			Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - diffToMonday)
+		);
+		return monday.getTime();
+	};
+
+	const earliest = Math.min(...discs.map((d) => d.createdAt));
+	const latest = Math.max(...discs.map((d) => d.createdAt));
+	const firstWeek = weekStart(earliest);
+	const lastWeek = weekStart(latest);
+
+	const totalWeeks = Math.round((lastWeek - firstWeek) / WEEK_MS) + 1;
+	const bucketCount = Math.min(totalWeeks, maxBuckets);
+	const rangeStart = lastWeek - (bucketCount - 1) * WEEK_MS;
+
+	const buckets = new Map<number, number>();
+	for (let i = 0; i < bucketCount; i++) {
+		buckets.set(rangeStart + i * WEEK_MS, 0);
+	}
+
+	for (const disc of discs) {
+		const bucket = weekStart(disc.createdAt);
+		if (buckets.has(bucket)) {
+			buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+		}
+	}
+
+	const formatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+	return [...buckets.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([start, count]) => ({ label: formatter.format(new Date(start)), start, count }));
+}
