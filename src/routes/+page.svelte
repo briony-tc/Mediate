@@ -14,7 +14,7 @@
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
 	discStore.discs = data.discs;
 
-	let sortKey = $state<SortKey>('updated');
+	let sortKey = $state<SortKey>('title');
 	let statusFilter = $state<StatusFilter>('all');
 	let mediaTypeFilter = $state<MediaTypeFilter>('all');
 	let searchQuery = $state('');
