@@ -59,7 +59,11 @@ export function parseStagingPath(relativePath: string): { title: string } | null
 
 function applyStatusTransition(discId: number, tree: Tree, path: string) {
 	const now = Date.now();
-	const status = tree === 'staging' ? 'staged' : 'complete';
+	// Staging is detected the moment MakeMKV *creates* the destination folder -
+	// i.e. at the start of a rip, not the end - so this means "actively
+	// ripping", not "ripped". See /api/rip-complete for the actual completion
+	// signal and the transition into 'complete'.
+	const status = tree === 'staging' ? 'ripping' : 'complete';
 
 	if (tree === 'staging') {
 		db.update(discs)
@@ -155,7 +159,7 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 		// before this app existed, then scanned in afterward).
 		const conditions = [
 			eq(discs.mediaType, parsed.mediaType),
-			inArray(discs.status, ['not_started', 'staged'])
+			inArray(discs.status, ['not_started', 'ripping', 'staged'])
 		];
 		if (parsed.mediaType === 'tv') {
 			conditions.push(

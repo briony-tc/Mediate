@@ -25,7 +25,7 @@ function seedDisc(overrides: Partial<typeof discs.$inferInsert> = {}) {
 			title: 'Inception',
 			mediaType: 'movie',
 			watchmodeId: Math.floor(Math.random() * 1_000_000),
-			status: 'staged',
+			status: 'ripping',
 			...overrides
 		})
 		.returning()
@@ -52,8 +52,9 @@ describe('promoteToJellyfin - movies', () => {
 		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
 		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
 
-		promoteToJellyfin(disc, stagingFolder);
+		const result = promoteToJellyfin(disc, stagingFolder);
 
+		expect(result).toBe('promoted');
 		const dest = join(jellyfinRoot, 'movies', 'Inception', 'Inception.mkv');
 		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception'))).toEqual(['Inception.mkv']);
 
@@ -90,8 +91,9 @@ describe('promoteToJellyfin - tv', () => {
 		writeFileSync(join(stagingFolder, 'title_t01.mkv'), 'x');
 		const disc = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
 
-		promoteToJellyfin(disc, stagingFolder);
+		const result = promoteToJellyfin(disc, stagingFolder);
 
+		expect(result).toBe('promoted');
 		const seasonDir = join(jellyfinRoot, 'tv', 'Breaking Bad', 'Season 1');
 		expect(readdirSync(seasonDir).sort()).toEqual([
 			'Breaking Bad - S01E01.mkv',
@@ -103,25 +105,38 @@ describe('promoteToJellyfin - tv', () => {
 		expect(updated.completePath).toBe(seasonDir);
 	});
 
-	it('does nothing and leaves the disc untouched when the disc has no season', () => {
+	it('flags for manual review (status -> staged) when the disc has no season', () => {
 		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
 		const disc = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: null });
 
-		promoteToJellyfin(disc, stagingFolder);
+		const result = promoteToJellyfin(disc, stagingFolder);
 
+		expect(result).toBe('needs_attention');
 		expect(readdirSync(stagingFolder)).toEqual(['title_t00.mkv']);
 		expect(testDb.select().from(discs).all()[0].status).toBe('staged');
 	});
 });
 
 describe('promoteToJellyfin - no rippable files', () => {
-	it('does nothing when the staging folder has no .mkv files', () => {
+	it('flags for manual review (status -> staged) when the staging folder has no .mkv files', () => {
 		writeFileSync(join(stagingFolder, 'readme.txt'), 'x');
 		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
 
-		promoteToJellyfin(disc, stagingFolder);
+		const result = promoteToJellyfin(disc, stagingFolder);
 
+		expect(result).toBe('needs_attention');
 		expect(readdirSync(stagingFolder)).toEqual(['readme.txt']);
+		expect(testDb.select().from(discs).all()[0].status).toBe('staged');
+	});
+});
+
+describe('promoteToJellyfin - filesystem error', () => {
+	it('flags for manual review (status -> staged) instead of throwing when the staging folder is unreadable', () => {
+		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
+
+		const result = promoteToJellyfin(disc, join(stagingFolder, 'does-not-exist'));
+
+		expect(result).toBe('needs_attention');
 		expect(testDb.select().from(discs).all()[0].status).toBe('staged');
 	});
 });

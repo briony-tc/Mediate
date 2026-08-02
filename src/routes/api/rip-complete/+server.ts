@@ -43,10 +43,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const disc = db.select().from(discs).where(eq(discs.stagedPath, absolutePath)).get();
 
-	if (disc && disc.status === 'staged') {
-		promoteToJellyfin(disc, absolutePath);
-		await notifyAll('Rip complete', `${disc.title} filed into Jellyfin.`);
-		return json({ outcome: 'promoted', discId: disc.id });
+	if (disc && disc.status === 'ripping') {
+		const result = promoteToJellyfin(disc, absolutePath);
+		if (result === 'promoted') {
+			await notifyAll('Rip complete', `${disc.title} filed into Jellyfin.`);
+			return json({ outcome: 'promoted', discId: disc.id });
+		}
+		await notifyAll(
+			'Rip complete',
+			`${disc.title} ripped, but couldn't be auto-filed - needs a look.`
+		);
+		return json({ outcome: 'needs_attention', discId: disc.id });
 	}
 
 	await notifyAll('Rip complete', `"${stagingFolderName}" ripped - needs manual match.`);

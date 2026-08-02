@@ -93,4 +93,25 @@ describe('POST /api/rip-complete', () => {
 		expect(data.outcome).toBe('needs_review');
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
 	});
+
+	it('flags a confidently-matched rip that fails to auto-file as needs_attention', async () => {
+		const [disc] = testDb
+			.insert(discs)
+			.values({ title: 'Breaking Bad', mediaType: 'tv', season: null, watchmodeId: 1 })
+			.returning()
+			.all();
+		mkdirSync(join(stagingRoot, 'Breaking Bad'));
+		writeFileSync(join(stagingRoot, 'Breaking Bad', 'title_t00.mkv'), 'x');
+
+		const response = await POST(makeRequest({ stagingFolderName: 'Breaking Bad' }));
+		const data = await response.json();
+
+		expect(data.outcome).toBe('needs_attention');
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('staged');
+	});
 });

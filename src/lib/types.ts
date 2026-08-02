@@ -1,4 +1,4 @@
-export type DiscStatus = 'not_started' | 'staged' | 'complete';
+export type DiscStatus = 'not_started' | 'ripping' | 'staged' | 'complete';
 
 export type Disc = {
 	id: number;

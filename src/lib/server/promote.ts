@@ -14,6 +14,8 @@ import { discs, type Disc } from './db/schema';
 import { serverEnv } from './env';
 import { emit } from './events';
 
+export type PromoteResult = 'promoted' | 'needs_attention';
+
 function sanitizeForFilename(title: string): string {
 	return title.replace(/[/\\:*?"<>|]/g, '').trim();
 }
@@ -48,61 +50,87 @@ function removeIfEmpty(dir: string): void {
 }
 
 /**
+ * 'staged' is repurposed for exactly this case: a disc we know finished
+ * ripping (matched, out of 'ripping' status) but couldn't be auto-filed
+ * cleanly - as distinct from 'ripping' (still in progress) or a disc that
+ * was never matched at all (stays 'not_started', tracked via unmatchedFiles).
+ */
+function markNeedsAttention(disc: Disc): PromoteResult {
+	const now = Date.now();
+	db.update(discs).set({ status: 'staged', updatedAt: now }).where(eq(discs.id, disc.id)).run();
+	emit({ discId: disc.id, status: 'staged', updatedAt: now });
+	return 'needs_attention';
+}
+
+/**
  * Moves a finished rip out of staging and into the Jellyfin movies/tv tree,
  * renamed to match the disc's confirmed title. Only called once a staging
  * folder has already been confidently auto-matched to a disc (see
  * reconcile.ts's AUTO_MATCH_THRESHOLD) - this function doesn't make matching
  * decisions, only files an already-confirmed disc.
  */
-export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string): void {
-	const files = readdirSync(stagingFolderAbsolutePath)
-		.filter((name) => name.toLowerCase().endsWith('.mkv'))
-		.sort();
-	if (files.length === 0) return;
-
-	const safeTitle = sanitizeForFilename(disc.title);
-	let completePath: string;
-
-	if (disc.mediaType === 'movie') {
-		// Largest file is the main feature; anything else (extras that passed
-		// MakeMKV's minlength filter) is left behind in staging rather than
-		// moved, so nothing is silently dropped.
-		const [largest] = files
-			.map((name) => ({ name, size: statSync(join(stagingFolderAbsolutePath, name)).size }))
-			.sort((a, b) => b.size - a.size);
-
-		const destDir = join(serverEnv.JELLYFIN_PATH, 'movies', safeTitle);
-		mkdirSync(destDir, { recursive: true });
-		completePath = join(destDir, `${safeTitle}.mkv`);
-		moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
-	} else {
-		const season = disc.season;
-		// A TV disc without a season can't be filed - auto-link already
-		// requires one (see reconcile.ts), so this shouldn't happen in
-		// practice, but leave the folder for manual review rather than guess.
-		if (season === null) return;
-
-		const destDir = join(serverEnv.JELLYFIN_PATH, 'tv', safeTitle, `Season ${season}`);
-		mkdirSync(destDir, { recursive: true });
-		// Numbered in disc/track order starting at E01. Known limitation: a
-		// season split across multiple discs restarts at E01 for each disc,
-		// since nothing in the schema tracks a starting episode offset.
-		files.forEach((name, index) => {
-			moveFile(
-				join(stagingFolderAbsolutePath, name),
-				join(destDir, episodeFileName(safeTitle, season, index + 1))
-			);
-		});
-		completePath = destDir;
+export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string): PromoteResult {
+	let files: string[];
+	try {
+		files = readdirSync(stagingFolderAbsolutePath)
+			.filter((name) => name.toLowerCase().endsWith('.mkv'))
+			.sort();
+	} catch (err) {
+		console.error(`[promote] could not read staging folder for disc ${disc.id}:`, err);
+		return markNeedsAttention(disc);
 	}
 
-	removeIfEmpty(stagingFolderAbsolutePath);
+	if (files.length === 0) return markNeedsAttention(disc);
 
-	const now = Date.now();
-	db.update(discs)
-		.set({ status: 'complete', completePath, completedAt: now, updatedAt: now })
-		.where(eq(discs.id, disc.id))
-		.run();
+	try {
+		const safeTitle = sanitizeForFilename(disc.title);
+		let completePath: string;
 
-	emit({ discId: disc.id, status: 'complete', completePath, updatedAt: now });
+		if (disc.mediaType === 'movie') {
+			// Largest file is the main feature; anything else (extras that passed
+			// MakeMKV's minlength filter) is left behind in staging rather than
+			// moved, so nothing is silently dropped.
+			const [largest] = files
+				.map((name) => ({ name, size: statSync(join(stagingFolderAbsolutePath, name)).size }))
+				.sort((a, b) => b.size - a.size);
+
+			const destDir = join(serverEnv.JELLYFIN_PATH, 'movies', safeTitle);
+			mkdirSync(destDir, { recursive: true });
+			completePath = join(destDir, `${safeTitle}.mkv`);
+			moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
+		} else {
+			// A TV disc without a season can't be filed - auto-link already
+			// requires one (see reconcile.ts), so this shouldn't happen in
+			// practice, but flag for manual review rather than guess.
+			if (disc.season === null) return markNeedsAttention(disc);
+			const season = disc.season;
+
+			const destDir = join(serverEnv.JELLYFIN_PATH, 'tv', safeTitle, `Season ${season}`);
+			mkdirSync(destDir, { recursive: true });
+			// Numbered in disc/track order starting at E01. Known limitation: a
+			// season split across multiple discs restarts at E01 for each disc,
+			// since nothing in the schema tracks a starting episode offset.
+			files.forEach((name, index) => {
+				moveFile(
+					join(stagingFolderAbsolutePath, name),
+					join(destDir, episodeFileName(safeTitle, season, index + 1))
+				);
+			});
+			completePath = destDir;
+		}
+
+		removeIfEmpty(stagingFolderAbsolutePath);
+
+		const now = Date.now();
+		db.update(discs)
+			.set({ status: 'complete', completePath, completedAt: now, updatedAt: now })
+			.where(eq(discs.id, disc.id))
+			.run();
+
+		emit({ discId: disc.id, status: 'complete', completePath, updatedAt: now });
+		return 'promoted';
+	} catch (err) {
+		console.error(`[promote] failed to file disc ${disc.id} into Jellyfin:`, err);
+		return markNeedsAttention(disc);
+	}
 }
