@@ -112,6 +112,22 @@
 			unmatched = unmatched.filter((u) => u.id !== unmatchedFileId);
 		}
 	}
+
+	// Inline confirm step rather than a native confirm() dialog - only one
+	// disc's confirmation shows at a time.
+	let pendingRemoveId = $state<number | null>(null);
+
+	async function removeDisc(discId: number) {
+		const response = await fetch('/api/remove', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId })
+		});
+		if (response.ok) {
+			discStore.discs = discStore.discs.filter((d) => d.id !== discId);
+		}
+		pendingRemoveId = null;
+	}
 </script>
 
 <div class="mx-auto max-w-3xl space-y-8 p-6">
@@ -209,9 +225,32 @@
 							</p>
 							<p class="text-xs text-gray-500 uppercase">{disc.mediaType}</p>
 						</div>
-						<span class="rounded-full px-3 py-1 text-xs font-medium {statusClass[disc.status]}">
-							{statusLabel[disc.status]}
-						</span>
+						{#if pendingRemoveId === disc.id}
+							<div class="flex items-center gap-2 text-sm">
+								<span class="text-gray-500">Remove?</span>
+								<button
+									class="rounded-md border border-red-600 px-2 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+									onclick={() => removeDisc(disc.id)}
+								>
+									Confirm
+								</button>
+								<button class="rounded-md border px-2 py-1" onclick={() => (pendingRemoveId = null)}>
+									Cancel
+								</button>
+							</div>
+						{:else}
+							<div class="flex items-center gap-2">
+								<span class="rounded-full px-3 py-1 text-xs font-medium {statusClass[disc.status]}">
+									{statusLabel[disc.status]}
+								</span>
+								<button
+									class="rounded-md border px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
+									onclick={() => (pendingRemoveId = disc.id)}
+								>
+									Remove
+								</button>
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
