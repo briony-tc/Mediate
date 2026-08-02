@@ -6,10 +6,9 @@
 	let status = $state<'idle' | 'loading' | 'error'>('idle');
 	let message = $state('Scan a barcode to get started.');
 	let candidates = $state<Candidate[]>([]);
-	// Poster previews are fetched lazily per-candidate (not eagerly for the
-	// whole list) since each one costs a Watchmode API call against a
-	// limited quota - only fetch when the user actually wants to compare
-	// cover art, not just because the year alone didn't disambiguate.
+	// Poster previews cost one Watchmode API call per candidate - fetched
+	// eagerly for the whole result list so covers just appear, at the cost
+	// of burning through the API quota faster than fetching on demand would.
 	let previewUrls = $state<Record<number, string | null>>({});
 	let previewLoading = $state<Record<number, boolean>>({});
 	let currentBarcode = $state<string | null>(null);
@@ -62,6 +61,12 @@
 		previewLoading = { ...previewLoading, [candidate.id]: false };
 	}
 
+	function loadPreviews(list: Candidate[]) {
+		for (const candidate of list) {
+			loadPreview(candidate);
+		}
+	}
+
 	async function postJson(url: string, body: unknown) {
 		const response = await fetch(url, {
 			method: 'POST',
@@ -89,6 +94,7 @@
 
 		rawLookupTitle = data.upcTitle;
 		candidates = data.results;
+		loadPreviews(candidates);
 		status = 'idle';
 
 		if (data.upcTitle === null) {
@@ -120,6 +126,7 @@
 		}
 
 		candidates = data.results;
+		loadPreviews(candidates);
 		status = 'idle';
 		message = candidates.length === 0 ? 'No matches found.' : 'Pick the correct match:';
 	}
@@ -211,6 +218,10 @@
 								alt="Cover art for {candidate.name}"
 								class="h-24 w-16 flex-none rounded-sm object-cover"
 							/>
+						{:else if previewLoading[candidate.id]}
+							<div
+								class="h-24 w-16 flex-none animate-pulse rounded-sm bg-gray-200 dark:bg-gray-700"
+							></div>
 						{/if}
 						<button
 							class="flex-1 text-left hover:opacity-80"
@@ -233,15 +244,7 @@
 								View on IMDb
 							</a>
 						{/if}
-						{#if !(candidate.id in previewUrls)}
-							<button
-								class="text-blue-600 underline dark:text-blue-400"
-								onclick={() => loadPreview(candidate)}
-								disabled={previewLoading[candidate.id]}
-							>
-								{previewLoading[candidate.id] ? 'Loading cover…' : 'Show cover'}
-							</button>
-						{:else if previewUrls[candidate.id] === null}
+						{#if candidate.id in previewUrls && previewUrls[candidate.id] === null}
 							<span class="text-gray-500">No cover available</span>
 						{/if}
 					</div>
