@@ -23,6 +23,18 @@ export const serverEnv = {
 	},
 	get UPCITEMDB_API_KEY() {
 		return env.UPCITEMDB_API_KEY;
+	},
+	get RIP_WEBHOOK_SECRET() {
+		return required('RIP_WEBHOOK_SECRET');
+	},
+	get VAPID_PUBLIC_KEY() {
+		return required('VAPID_PUBLIC_KEY');
+	},
+	get VAPID_PRIVATE_KEY() {
+		return required('VAPID_PRIVATE_KEY');
+	},
+	get VAPID_SUBJECT() {
+		return required('VAPID_SUBJECT');
 	}
 };
 
@@ -31,4 +43,8 @@ export function assertServerEnv() {
 	serverEnv.STAGING_PATH;
 	serverEnv.JELLYFIN_PATH;
 	serverEnv.WATCHMODE_API_KEY;
+	serverEnv.RIP_WEBHOOK_SECRET;
+	serverEnv.VAPID_PUBLIC_KEY;
+	serverEnv.VAPID_PRIVATE_KEY;
+	serverEnv.VAPID_SUBJECT;
 }
