@@ -175,6 +175,27 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 		expect(updated?.completePath).toBe(absolute);
 	});
 
+	it('re-matches a renamed folder for an already-complete disc instead of flagging it unmatched', () => {
+		const disc = seedDisc({
+			title: 'Inception',
+			status: 'complete',
+			completePath: '/jellyfin/movies/Inception/Inception.mkv'
+		});
+		// e.g. manually renamed on disk to match Jellyfin's "Title (Year)" convention.
+		const renamed = '/jellyfin/movies/Inception (2010)/Inception.mkv';
+
+		onFileSeen(renamed, ['movies', 'Inception (2010)', 'Inception.mkv'].join(sep), 'jellyfin');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('complete');
+		expect(updated?.completePath).toBe(renamed);
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+	});
+
 	it('promotes ripping -> complete when seen in the jellyfin tree', () => {
 		// e.g. the automated rip-complete webhook's promoteToJellyfin() failed
 		// to run (or hasn't yet) but the file made it into Jellyfin some other way.
