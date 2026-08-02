@@ -4,15 +4,16 @@ export type SortKey = 'updated' | 'title' | 'year' | 'status';
 export type MediaTypeFilter = 'all' | 'movie' | 'tv';
 export type StatusFilter = 'all' | DiscStatus;
 
-const STATUS_ORDER: Record<DiscStatus, number> = { not_started: 0, staged: 1, complete: 2 };
+const STATUS_ORDER: Record<DiscStatus, number> = {
+	not_started: 0,
+	ripping: 1,
+	staged: 2,
+	complete: 3
+};
 
 export function filterDiscs(
 	discs: Disc[],
-	{
-		status,
-		mediaType,
-		query
-	}: { status: StatusFilter; mediaType: MediaTypeFilter; query: string }
+	{ status, mediaType, query }: { status: StatusFilter; mediaType: MediaTypeFilter; query: string }
 ): Disc[] {
 	const needle = query.trim().toLowerCase();
 	return discs.filter((disc) => {
@@ -47,7 +48,13 @@ export function sortDiscs(discs: Disc[], sortKey: SortKey): Disc[] {
 export type StatusCounts = Record<DiscStatus, number> & { total: number };
 
 export function statusCounts(discs: Disc[]): StatusCounts {
-	const counts: StatusCounts = { not_started: 0, staged: 0, complete: 0, total: discs.length };
+	const counts: StatusCounts = {
+		not_started: 0,
+		ripping: 0,
+		staged: 0,
+		complete: 0,
+		total: discs.length
+	};
 	for (const disc of discs) {
 		counts[disc.status] += 1;
 	}

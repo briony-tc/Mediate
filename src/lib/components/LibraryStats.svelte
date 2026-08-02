@@ -17,8 +17,19 @@
 
 	const progressSegments = $derived(
 		[
-			{ key: 'not_started', label: 'Not started', count: counts.not_started, color: 'var(--status-neutral)' },
-			{ key: 'staged', label: 'Staged', count: counts.staged, color: 'var(--status-warning)' },
+			{
+				key: 'not_started',
+				label: 'Not started',
+				count: counts.not_started,
+				color: 'var(--status-neutral)'
+			},
+			{ key: 'ripping', label: 'Ripping', count: counts.ripping, color: 'var(--series-blue)' },
+			{
+				key: 'staged',
+				label: 'Needs attention',
+				count: counts.staged,
+				color: 'var(--status-warning)'
+			},
 			{ key: 'complete', label: 'Complete', count: counts.complete, color: 'var(--status-good)' }
 		].filter((s) => s.count > 0)
 	);
@@ -44,7 +55,7 @@
 	{#if counts.total === 0}
 		<p class="text-sm text-gray-500">Stats will appear once you've scanned a few discs.</p>
 	{:else}
-		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-5">
 			<div>
 				<p class="text-2xl font-semibold">{counts.total}</p>
 				<p class="text-xs text-gray-500">Total discs</p>
@@ -54,8 +65,12 @@
 				<p class="text-xs text-gray-500">Not started</p>
 			</div>
 			<div>
+				<p class="text-2xl font-semibold">{counts.ripping}</p>
+				<p class="text-xs text-gray-500">Ripping</p>
+			</div>
+			<div>
 				<p class="text-2xl font-semibold">{counts.staged}</p>
-				<p class="text-xs text-gray-500">Staged</p>
+				<p class="text-xs text-gray-500">Needs attention</p>
 			</div>
 			<div>
 				<p class="text-2xl font-semibold">{counts.complete}</p>
@@ -65,17 +80,23 @@
 
 		<div class="space-y-2">
 			<p class="text-sm font-medium">Migration progress</p>
-			<div class="flex h-6 w-full overflow-hidden rounded-[4px] bg-[var(--chart-surface)]" role="img"
-				aria-label="Migration progress: {progressSegments.map((s) => `${s.label} ${s.count}`).join(', ')}">
+			<div
+				class="flex h-6 w-full overflow-hidden rounded-[4px] bg-[var(--chart-surface)]"
+				role="img"
+				aria-label="Migration progress: {progressSegments
+					.map((s) => `${s.label} ${s.count}`)
+					.join(', ')}"
+			>
 				{#each progressSegments as segment, i (segment.key)}
 					<button
 						type="button"
 						class="group relative h-full border-0 p-0"
 						class:rounded-l-[4px]={i === 0}
 						class:rounded-r-[4px]={i === progressSegments.length - 1}
-						style="width: {pct(segment.count, counts.total)}%; background: {segment.color}; margin-left: {i > 0
-							? '2px'
-							: '0'};"
+						style="width: {pct(
+							segment.count,
+							counts.total
+						)}%; background: {segment.color}; margin-left: {i > 0 ? '2px' : '0'};"
 						aria-label="{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)"
 					>
 						<div
@@ -90,7 +111,8 @@
 			<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
 				{#each progressSegments as segment (segment.key)}
 					<span class="flex items-center gap-1.5">
-						<span class="inline-block h-2.5 w-2.5 rounded-full" style="background: {segment.color}"></span>
+						<span class="inline-block h-2.5 w-2.5 rounded-full" style="background: {segment.color}"
+						></span>
 						{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)
 					</span>
 				{/each}
@@ -100,17 +122,21 @@
 		{#if mediaSegments.length > 0}
 			<div class="space-y-2">
 				<p class="text-sm font-medium">Movies vs TV</p>
-				<div class="flex h-6 w-full overflow-hidden rounded-[4px] bg-[var(--chart-surface)]" role="img"
-					aria-label="Media type: {mediaSegments.map((s) => `${s.label} ${s.count}`).join(', ')}">
+				<div
+					class="flex h-6 w-full overflow-hidden rounded-[4px] bg-[var(--chart-surface)]"
+					role="img"
+					aria-label="Media type: {mediaSegments.map((s) => `${s.label} ${s.count}`).join(', ')}"
+				>
 					{#each mediaSegments as segment, i (segment.key)}
 						<button
 							type="button"
 							class="group relative h-full border-0 p-0"
 							class:rounded-l-[4px]={i === 0}
 							class:rounded-r-[4px]={i === mediaSegments.length - 1}
-							style="width: {pct(segment.count, counts.total)}%; background: {segment.color}; margin-left: {i > 0
-								? '2px'
-								: '0'};"
+							style="width: {pct(
+								segment.count,
+								counts.total
+							)}%; background: {segment.color}; margin-left: {i > 0 ? '2px' : '0'};"
 							aria-label="{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)"
 						>
 							<div
@@ -125,7 +151,10 @@
 				<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
 					{#each mediaSegments as segment (segment.key)}
 						<span class="flex items-center gap-1.5">
-							<span class="inline-block h-2.5 w-2.5 rounded-full" style="background: {segment.color}"></span>
+							<span
+								class="inline-block h-2.5 w-2.5 rounded-full"
+								style="background: {segment.color}"
+							></span>
 							{segment.label}: {segment.count}
 						</span>
 					{/each}
@@ -143,7 +172,9 @@
 							<div class="h-4 flex-1 overflow-hidden rounded-[4px] bg-[var(--chart-surface)]">
 								<div
 									class="h-full rounded-[4px]"
-									style="width: {pct(genre.count, maxGenreCount)}%; background: {genreColors[i % genreColors.length]};"
+									style="width: {pct(genre.count, maxGenreCount)}%; background: {genreColors[
+										i % genreColors.length
+									]};"
 								></div>
 							</div>
 							<span class="w-6 flex-none text-right text-gray-500">{genre.count}</span>
@@ -165,7 +196,10 @@
 						>
 							<div
 								class="mx-auto rounded-t-[4px] bg-[var(--series-blue)]"
-								style="height: {Math.max(2, (week.count / maxWeekCount) * 100)}%; width: min(24px, 100%);"
+								style="height: {Math.max(
+									2,
+									(week.count / maxWeekCount) * 100
+								)}%; width: min(24px, 100%);"
 							></div>
 							<div
 								aria-hidden="true"

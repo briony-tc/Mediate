@@ -2,7 +2,10 @@ import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core';
 
 export const discs = sqliteTable('discs', {
 	id: integer('id').primaryKey({ autoIncrement: true }),
-	status: text('status', { enum: ['not_started', 'staged', 'complete'] })
+	// ripping: actively being ripped (staging folder created, not yet confirmed
+	// done). staged: rip confirmed done but auto-filing into Jellyfin didn't
+	// happen cleanly (ambiguous match, or promotion failed) - needs a look.
+	status: text('status', { enum: ['not_started', 'ripping', 'staged', 'complete'] })
 		.notNull()
 		.default('not_started'),
 	title: text('title').notNull(),

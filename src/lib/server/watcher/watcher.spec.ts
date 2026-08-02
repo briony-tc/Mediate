@@ -73,7 +73,7 @@ describe('watcher', () => {
 				.from(discs)
 				.all()
 				.find((d) => d.id === disc.id);
-			return row?.status === 'staged';
+			return row?.status === 'ripping';
 		});
 
 		const updated = testDb
@@ -102,7 +102,7 @@ describe('watcher', () => {
 				.from(discs)
 				.all()
 				.find((d) => d.id === disc.id);
-			return row?.status === 'staged';
+			return row?.status === 'ripping';
 		});
 
 		const updated = testDb
@@ -110,7 +110,7 @@ describe('watcher', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.status).toBe('staged');
+		expect(updated?.status).toBe('ripping');
 	});
 
 	it('promotes to complete when the same title appears in the jellyfin tree', async () => {

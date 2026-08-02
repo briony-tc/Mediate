@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Disc } from '$lib/types';
-import { filterDiscs, growthBuckets, mediaTypeCounts, sortDiscs, statusCounts, topGenres } from './library';
+import {
+	filterDiscs,
+	growthBuckets,
+	mediaTypeCounts,
+	sortDiscs,
+	statusCounts,
+	topGenres
+} from './library';
 
 function makeDisc(overrides: Partial<Disc> = {}): Disc {
 	return {
@@ -62,23 +69,29 @@ describe('sortDiscs', () => {
 	const discs = [
 		makeDisc({ id: 1, title: 'Charlie', year: 2000, status: 'complete', updatedAt: 10 }),
 		makeDisc({ id: 2, title: 'Alpha', year: null, status: 'not_started', updatedAt: 30 }),
-		makeDisc({ id: 3, title: 'Bravo', year: 1990, status: 'staged', updatedAt: 20 })
+		makeDisc({ id: 3, title: 'Bravo', year: 1990, status: 'staged', updatedAt: 20 }),
+		makeDisc({ id: 4, title: 'Delta', year: 2010, status: 'ripping', updatedAt: 25 })
 	];
 
 	it('sorts by title A-Z', () => {
-		expect(sortDiscs(discs, 'title').map((d) => d.title)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+		expect(sortDiscs(discs, 'title').map((d) => d.title)).toEqual([
+			'Alpha',
+			'Bravo',
+			'Charlie',
+			'Delta'
+		]);
 	});
 
 	it('sorts by year descending, with undated titles last', () => {
-		expect(sortDiscs(discs, 'year').map((d) => d.id)).toEqual([1, 3, 2]);
+		expect(sortDiscs(discs, 'year').map((d) => d.id)).toEqual([4, 1, 3, 2]);
 	});
 
-	it('sorts by status in workflow order (not_started, staged, complete)', () => {
-		expect(sortDiscs(discs, 'status').map((d) => d.id)).toEqual([2, 3, 1]);
+	it('sorts by status in workflow order (not_started, ripping, staged, complete)', () => {
+		expect(sortDiscs(discs, 'status').map((d) => d.id)).toEqual([2, 4, 3, 1]);
 	});
 
 	it('sorts by most recently updated', () => {
-		expect(sortDiscs(discs, 'updated').map((d) => d.id)).toEqual([2, 3, 1]);
+		expect(sortDiscs(discs, 'updated').map((d) => d.id)).toEqual([2, 4, 3, 1]);
 	});
 
 	it('does not mutate the input array', () => {
@@ -96,11 +109,23 @@ describe('statusCounts', () => {
 			makeDisc({ status: 'staged' }),
 			makeDisc({ status: 'complete' })
 		];
-		expect(statusCounts(discs)).toEqual({ not_started: 2, staged: 1, complete: 1, total: 4 });
+		expect(statusCounts(discs)).toEqual({
+			not_started: 2,
+			ripping: 0,
+			staged: 1,
+			complete: 1,
+			total: 4
+		});
 	});
 
 	it('returns zeros for an empty library', () => {
-		expect(statusCounts([])).toEqual({ not_started: 0, staged: 0, complete: 0, total: 0 });
+		expect(statusCounts([])).toEqual({
+			not_started: 0,
+			ripping: 0,
+			staged: 0,
+			complete: 0,
+			total: 0
+		});
 	});
 });
 

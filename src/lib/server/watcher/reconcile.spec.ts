@@ -87,7 +87,7 @@ describe('parseStagingPath', () => {
 });
 
 describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
-	it('auto-links an unambiguous clean match and promotes not_started -> staged', () => {
+	it('auto-links an unambiguous clean match and promotes not_started -> ripping', () => {
 		const disc = seedDisc({ title: 'Inception', status: 'not_started' });
 		const absolute = '/staging/Inception';
 
@@ -98,7 +98,7 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.status).toBe('staged');
+		expect(updated?.status).toBe('ripping');
 		expect(updated?.stagedPath).toBe(absolute);
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
@@ -109,7 +109,7 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 
 		onFileSeen(absolute, 'FERNGULLY_THE_LAST_RAINFOREST', 'staging');
 
-		expect(testDb.select().from(discs).all()[0].status).toBe('staged');
+		expect(testDb.select().from(discs).all()[0].status).toBe('ripping');
 	});
 
 	it('does not auto-link when multiple not_started discs share the same title (ambiguous season)', () => {
@@ -175,6 +175,25 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 		expect(updated?.completePath).toBe(absolute);
 	});
 
+	it('promotes ripping -> complete when seen in the jellyfin tree', () => {
+		// e.g. the automated rip-complete webhook's promoteToJellyfin() failed
+		// to run (or hasn't yet) but the file made it into Jellyfin some other way.
+		const disc = seedDisc({
+			status: 'ripping',
+			stagedPath: '/staging/Inception'
+		});
+		const absolute = '/jellyfin/movies/Inception/Inception.mkv';
+
+		onFileSeen(absolute, ['movies', 'Inception', 'Inception.mkv'].join(sep), 'jellyfin');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('complete');
+	});
+
 	it('promotes not_started -> complete directly when content is found in jellyfin without ever being staged', () => {
 		// e.g. content ripped/placed before this app existed, scanned in afterward
 		const disc = seedDisc({ status: 'not_started' });
@@ -223,7 +242,7 @@ describe('onFileSeen - idempotency (applies to both trees)', () => {
 		const absolute = '/staging/Inception';
 		seedDisc({
 			title: 'Inception',
-			status: 'staged',
+			status: 'ripping',
 			stagedPath: absolute,
 			stagedAt: 123,
 			updatedAt: 123
@@ -276,7 +295,7 @@ describe('onFileSeen - idempotency (applies to both trees)', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.status).toBe('staged');
+		expect(updated?.status).toBe('ripping');
 		// the stale unmatched row is cleaned up once it resolves
 		expect(
 			testDb
