@@ -223,17 +223,13 @@
 								class="h-24 w-16 flex-none animate-pulse rounded-sm bg-gray-200 dark:bg-gray-700"
 							></div>
 						{/if}
-						<button
-							class="flex-1 text-left hover:opacity-80"
-							onclick={() => selectCandidate(candidate)}
-							disabled={status === 'loading'}
-						>
+						<div class="flex-1">
 							<span class="font-medium">{candidate.name}</span>
 							{#if candidate.year}<span class="text-gray-500"> ({candidate.year})</span>{/if}
 							<span class="block text-xs text-gray-500 uppercase">{candidate.type}</span>
-						</button>
+						</div>
 					</div>
-					<div class="mt-2 flex gap-3 text-xs">
+					<div class="mt-2 flex items-center gap-3 text-xs">
 						{#if candidate.imdbId}
 							<a
 								href={imdbUrl(candidate.imdbId)}
@@ -247,6 +243,13 @@
 						{#if candidate.id in previewUrls && previewUrls[candidate.id] === null}
 							<span class="text-gray-500">No cover available</span>
 						{/if}
+						<button
+							class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+							onclick={() => selectCandidate(candidate)}
+							disabled={status === 'loading'}
+						>
+							Add
+						</button>
 					</div>
 				</li>
 			{/each}
