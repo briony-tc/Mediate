@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { DiscStore } from '$lib/stores/discs.svelte';
+	import LibraryStats from '$lib/components/LibraryStats.svelte';
+	import { filterDiscs, sortDiscs, type MediaTypeFilter, type SortKey, type StatusFilter } from '$lib/library';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -11,6 +13,22 @@
 	const discStore = new DiscStore();
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
 	discStore.discs = data.discs;
+
+	let sortKey = $state<SortKey>('updated');
+	let statusFilter = $state<StatusFilter>('all');
+	let mediaTypeFilter = $state<MediaTypeFilter>('all');
+	let searchQuery = $state('');
+
+	let visibleDiscs = $derived(
+		sortDiscs(
+			filterDiscs(discStore.discs, {
+				status: statusFilter,
+				mediaType: mediaTypeFilter,
+				query: searchQuery
+			}),
+			sortKey
+		)
+	);
 	let unmatched = $state<typeof data.unmatchedFiles>([]);
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
 	unmatched = data.unmatchedFiles;
@@ -99,6 +117,8 @@
 <div class="mx-auto max-w-3xl space-y-8 p-6">
 	<h1 class="text-2xl font-semibold">Library</h1>
 
+	<LibraryStats discs={discStore.discs} />
+
 	{#if unmatched.length > 0}
 		<section class="space-y-3">
 			<h2 class="text-lg font-medium">Needs attention ({unmatched.length})</h2>
@@ -144,14 +164,42 @@
 	{/if}
 
 	<section class="space-y-3">
-		<h2 class="text-lg font-medium">Discs ({discStore.discs.length})</h2>
+		<h2 class="text-lg font-medium">Discs ({visibleDiscs.length} of {discStore.discs.length})</h2>
 		{#if discStore.discs.length === 0}
 			<p class="text-sm text-gray-500">
 				No discs scanned yet. <a href="/scan" class="underline">Scan one</a>.
 			</p>
 		{:else}
+			<div class="flex flex-wrap items-center gap-2">
+				<input
+					type="text"
+					bind:value={searchQuery}
+					placeholder="Search titles…"
+					class="flex-1 rounded-md border p-2 text-sm"
+				/>
+				<select bind:value={statusFilter} class="rounded-md border p-2 text-sm">
+					<option value="all">All statuses</option>
+					<option value="not_started">Not started</option>
+					<option value="staged">Staged</option>
+					<option value="complete">Complete</option>
+				</select>
+				<select bind:value={mediaTypeFilter} class="rounded-md border p-2 text-sm">
+					<option value="all">Movies & TV</option>
+					<option value="movie">Movies</option>
+					<option value="tv">TV</option>
+				</select>
+				<select bind:value={sortKey} class="rounded-md border p-2 text-sm">
+					<option value="updated">Recently updated</option>
+					<option value="title">Title (A–Z)</option>
+					<option value="year">Year (newest)</option>
+					<option value="status">Status</option>
+				</select>
+			</div>
+			{#if visibleDiscs.length === 0}
+				<p class="text-sm text-gray-500">No discs match these filters.</p>
+			{/if}
 			<ul class="divide-y">
-				{#each discStore.discs as disc (disc.id)}
+				{#each visibleDiscs as disc (disc.id)}
 					<li class="flex items-center justify-between py-3">
 						<div>
 							<p class="font-medium">
