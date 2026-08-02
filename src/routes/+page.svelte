@@ -192,6 +192,7 @@
 					bind:value={searchQuery}
 					placeholder="Search titles…"
 					class="flex-1 rounded-md border p-2 text-sm"
+					onfocus={(e) => e.currentTarget.select()}
 				/>
 				<select bind:value={statusFilter} class="rounded-md border p-2 text-sm">
 					<option value="all">All statuses</option>

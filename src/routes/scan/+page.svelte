@@ -219,6 +219,7 @@
 			bind:value={manualQuery}
 			placeholder="Search by title…"
 			class="flex-1 rounded-md border p-2"
+			onfocus={(e) => e.currentTarget.select()}
 		/>
 		<button
 			type="submit"
