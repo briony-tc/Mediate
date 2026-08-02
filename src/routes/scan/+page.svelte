@@ -6,6 +6,12 @@
 	let status = $state<'idle' | 'loading' | 'error'>('idle');
 	let message = $state('Scan a barcode to get started.');
 	let candidates = $state<Candidate[]>([]);
+	// Poster previews are fetched lazily per-candidate (not eagerly for the
+	// whole list) since each one costs a Watchmode API call against a
+	// limited quota - only fetch when the user actually wants to compare
+	// cover art, not just because the year alone didn't disambiguate.
+	let previewUrls = $state<Record<number, string | null>>({});
+	let previewLoading = $state<Record<number, boolean>>({});
 	let currentBarcode = $state<string | null>(null);
 	let rawLookupTitle = $state<string | null>(null);
 	let manualQuery = $state('');
@@ -35,7 +41,25 @@
 		manualQuery = '';
 		pendingCandidate = null;
 		seasonInput = undefined;
+		previewUrls = {};
+		previewLoading = {};
 		focusSignal += 1;
+	}
+
+	function imdbUrl(imdbId: string) {
+		return `https://www.imdb.com/title/${imdbId}/`;
+	}
+
+	async function loadPreview(candidate: Candidate) {
+		if (candidate.id in previewUrls || previewLoading[candidate.id]) return;
+		previewLoading = { ...previewLoading, [candidate.id]: true };
+
+		const { response, data } = await postJson('/api/preview', { watchmodeId: candidate.id });
+		previewUrls = {
+			...previewUrls,
+			[candidate.id]: response.ok ? (data.details?.posterUrl ?? null) : null
+		};
+		previewLoading = { ...previewLoading, [candidate.id]: false };
 	}
 
 	async function postJson(url: string, body: unknown) {
@@ -179,16 +203,48 @@
 	{:else if candidates.length > 0}
 		<ul class="space-y-2">
 			{#each candidates as candidate (candidate.id)}
-				<li>
-					<button
-						class="w-full rounded-md border p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-						onclick={() => selectCandidate(candidate)}
-						disabled={status === 'loading'}
-					>
-						<span class="font-medium">{candidate.name}</span>
-						{#if candidate.year}<span class="text-gray-500"> ({candidate.year})</span>{/if}
-						<span class="block text-xs text-gray-500 uppercase">{candidate.type}</span>
-					</button>
+				<li class="rounded-md border p-3">
+					<div class="flex items-start gap-3">
+						{#if previewUrls[candidate.id]}
+							<img
+								src={previewUrls[candidate.id]}
+								alt="Cover art for {candidate.name}"
+								class="h-24 w-16 flex-none rounded-sm object-cover"
+							/>
+						{/if}
+						<button
+							class="flex-1 text-left hover:opacity-80"
+							onclick={() => selectCandidate(candidate)}
+							disabled={status === 'loading'}
+						>
+							<span class="font-medium">{candidate.name}</span>
+							{#if candidate.year}<span class="text-gray-500"> ({candidate.year})</span>{/if}
+							<span class="block text-xs text-gray-500 uppercase">{candidate.type}</span>
+						</button>
+					</div>
+					<div class="mt-2 flex gap-3 text-xs">
+						{#if candidate.imdbId}
+							<a
+								href={imdbUrl(candidate.imdbId)}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 underline dark:text-blue-400"
+							>
+								View on IMDb
+							</a>
+						{/if}
+						{#if !(candidate.id in previewUrls)}
+							<button
+								class="text-blue-600 underline dark:text-blue-400"
+								onclick={() => loadPreview(candidate)}
+								disabled={previewLoading[candidate.id]}
+							>
+								{previewLoading[candidate.id] ? 'Loading cover…' : 'Show cover'}
+							</button>
+						{:else if previewUrls[candidate.id] === null}
+							<span class="text-gray-500">No cover available</span>
+						{/if}
+					</div>
 				</li>
 			{/each}
 		</ul>
