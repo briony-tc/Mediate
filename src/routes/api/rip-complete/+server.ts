@@ -43,7 +43,13 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const disc = db.select().from(discs).where(eq(discs.stagedPath, absolutePath)).get();
 
-	if (disc && disc.status === 'ripping') {
+	// 'staged' is included alongside 'ripping': a disc can end up linked to
+	// this exact staging path via manual "Needs attention" resolution (see
+	// api/link) while the rip is still running, in which case it's 'staged'
+	// (not 'ripping') by the time this webhook fires - it's just as safe to
+	// promote, since stagedPath matching this absolutePath is what actually
+	// confirms it's the right disc, not the status value itself.
+	if (disc && (disc.status === 'ripping' || disc.status === 'staged')) {
 		const result = promoteToJellyfin(disc, absolutePath);
 		if (result === 'promoted') {
 			await notifyAll('Rip complete', `${disc.title} filed into Jellyfin.`);
