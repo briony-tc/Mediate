@@ -40,11 +40,20 @@ function warnIfStagingPathMisconfigured(root: string) {
  * Only 'addDir' is watched, not 'add': individual files live one level
  * deeper than depth allows, so a folder's own creation is the signal we
  * react to - matching happens at folder granularity, not per-file.
+ *
+ * usePolling is required here: these roots are Docker bind mounts onto
+ * network-backed storage (served over Samba to other devices). Native
+ * inotify watching a directory through a bind mount in that setup can leave
+ * it looking "in use" to another process (e.g. Samba refusing to delete an
+ * empty folder) even though nothing is actually being written. Polling
+ * doesn't hold any persistent handle open on the watched directories.
  */
 function watchTree(root: string, tree: Tree, depth: number): FSWatcher {
 	const watcher = watch(root, {
 		depth,
 		ignoreInitial: false,
+		usePolling: true,
+		interval: 2000,
 		awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 200 }
 	});
 
