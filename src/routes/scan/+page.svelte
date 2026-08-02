@@ -23,8 +23,25 @@
 	// empty), not a string - don't treat this like a text input's value.
 	let seasonInput = $state<number | undefined>(undefined);
 
+	// Tracks every successful add from the *current* result list, so a single
+	// search (e.g. "Toy Story") can add several matching discs one at a time
+	// without the list disappearing after the first - it only clears when a
+	// new scan or search starts (see handleScan/handleManualSearch).
+	let addedEntries = $state<{ id: number; season: number | null }[]>([]);
+
 	function isTv(candidate: Candidate) {
 		return candidate.type !== 'movie' && candidate.type !== 'short_film';
+	}
+
+	function isAdded(id: number, season: number | null) {
+		return addedEntries.some((e) => e.id === id && e.season === season);
+	}
+
+	function addedSeasonsFor(id: number): number[] {
+		return addedEntries
+			.filter((e) => e.id === id && e.season !== null)
+			.map((e) => e.season as number)
+			.sort((a, b) => a - b);
 	}
 
 	function guessSeasonNumber(title: string | null): number | null {
@@ -42,6 +59,7 @@
 		seasonInput = undefined;
 		previewUrls = {};
 		previewLoading = {};
+		addedEntries = [];
 		focusSignal += 1;
 	}
 
@@ -83,6 +101,7 @@
 		rawLookupTitle = null;
 		candidates = [];
 		pendingCandidate = null;
+		addedEntries = [];
 
 		const { response, data } = await postJson('/api/scan', { barcode });
 
@@ -116,6 +135,7 @@
 		currentBarcode = null;
 		rawLookupTitle = manualQuery;
 		pendingCandidate = null;
+		addedEntries = [];
 
 		const { response, data } = await postJson('/api/search', { query: manualQuery });
 
@@ -145,6 +165,15 @@
 		confirmCandidate(pendingCandidate, seasonInput ?? null);
 	}
 
+	// Clears just the in-progress season prompt after an add, leaving the
+	// result list (and any other candidates in it) visible - resetFlow()
+	// (which wipes the list) only runs for a brand new scan or search.
+	function clearPendingAdd() {
+		pendingCandidate = null;
+		seasonInput = undefined;
+		focusSignal += 1;
+	}
+
 	async function confirmCandidate(candidate: Candidate, season: number | null) {
 		status = 'loading';
 
@@ -158,7 +187,8 @@
 		if (response.status === 409) {
 			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
 			status = 'idle';
-			resetFlow();
+			addedEntries = [...addedEntries, { id: candidate.id, season }];
+			clearPendingAdd();
 			return;
 		}
 
@@ -170,7 +200,8 @@
 
 		message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''} as Not started.`;
 		status = 'idle';
-		resetFlow();
+		addedEntries = [...addedEntries, { id: candidate.id, season }];
+		clearPendingAdd();
 	}
 </script>
 
@@ -243,13 +274,24 @@
 						{#if candidate.id in previewUrls && previewUrls[candidate.id] === null}
 							<span class="text-gray-500">No cover available</span>
 						{/if}
-						<button
-							class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-							onclick={() => selectCandidate(candidate)}
-							disabled={status === 'loading'}
-						>
-							Add
-						</button>
+						{#if isTv(candidate) && addedSeasonsFor(candidate.id).length > 0}
+							<span class="text-gray-500">
+								Added: season{addedSeasonsFor(candidate.id).length > 1 ? 's' : ''} {addedSeasonsFor(
+									candidate.id
+								).join(', ')}
+							</span>
+						{/if}
+						{#if !isTv(candidate) && isAdded(candidate.id, null)}
+							<span class="ml-auto rounded-md border px-3 py-1 font-medium text-gray-500"> Added ✓ </span>
+						{:else}
+							<button
+								class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+								onclick={() => selectCandidate(candidate)}
+								disabled={status === 'loading'}
+							>
+								Add
+							</button>
+						{/if}
 					</div>
 				</li>
 			{/each}
