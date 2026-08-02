@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,7 +33,9 @@ function waitFor(predicate: () => boolean, timeoutMs = 3000, intervalMs = 50): P
 beforeEach(() => {
 	stagingRoot = mkdtempSync(join(tmpdir(), 'mls-staging-'));
 	jellyfinRoot = mkdtempSync(join(tmpdir(), 'mls-jellyfin-'));
-	mkdirSync(join(stagingRoot, 'movies'), { recursive: true });
+	// Staging is flat (see parseStagingPath) - a placeholder keeps the root
+	// non-empty so the misconfiguration heuristic doesn't fire by default.
+	writeFileSync(join(stagingRoot, '.keep'), '');
 	mkdirSync(join(jellyfinRoot, 'movies'), { recursive: true });
 	mockEnv.STAGING_PATH = stagingRoot;
 	mockEnv.JELLYFIN_PATH = jellyfinRoot;
@@ -48,13 +50,13 @@ afterEach(async () => {
 });
 
 describe('watcher', () => {
-	it('detects an existing folder at startup and auto-links a matching disc', async () => {
+	it('detects an existing staging folder at startup and auto-links a matching disc', async () => {
 		const [disc] = testDb
 			.insert(discs)
 			.values({ title: 'Inception', mediaType: 'movie', watchmodeId: 1 })
 			.returning()
 			.all();
-		mkdirSync(join(stagingRoot, 'movies', 'Inception'));
+		mkdirSync(join(stagingRoot, 'Inception'));
 
 		startWatcher();
 
@@ -72,10 +74,10 @@ describe('watcher', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.stagedPath).toBe(join(stagingRoot, 'movies', 'Inception'));
+		expect(updated?.stagedPath).toBe(join(stagingRoot, 'Inception'));
 	});
 
-	it('detects a folder added live after startup', async () => {
+	it('detects a staging folder added live after startup', async () => {
 		const [disc] = testDb
 			.insert(discs)
 			.values({ title: 'The Matrix', mediaType: 'movie', watchmodeId: 2 })
@@ -85,7 +87,7 @@ describe('watcher', () => {
 		startWatcher();
 		await new Promise((resolve) => setTimeout(resolve, 300));
 
-		mkdirSync(join(stagingRoot, 'movies', 'The Matrix'));
+		mkdirSync(join(stagingRoot, 'The Matrix'));
 
 		await waitFor(() => {
 			const row = testDb
@@ -105,7 +107,7 @@ describe('watcher', () => {
 	});
 
 	it('promotes to complete when the same title appears in the jellyfin tree', async () => {
-		const stagedPath = join(stagingRoot, 'movies', 'Inception');
+		const stagedPath = join(stagingRoot, 'Inception');
 		const [disc] = testDb
 			.insert(discs)
 			.values({
@@ -145,9 +147,19 @@ describe('watcher', () => {
 		expect(() => startWatcher()).not.toThrow();
 	});
 
-	it('warns when a configured root has no movies/tv subfolder (misconfigured path)', () => {
+	it('warns when JELLYFIN_PATH has no movies/tv subfolder (misconfigured path)', () => {
 		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		mockEnv.STAGING_PATH = join(stagingRoot, 'nonexistent-nested-root');
+		mockEnv.JELLYFIN_PATH = join(jellyfinRoot, 'nonexistent-nested-root');
+
+		startWatcher();
+
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('JELLYFIN_PATH'));
+		warnSpy.mockRestore();
+	});
+
+	it('warns when STAGING_PATH does not exist or is empty', () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		mockEnv.STAGING_PATH = join(stagingRoot, 'nonexistent-root');
 
 		startWatcher();
 
@@ -164,8 +176,8 @@ describe('watcher', () => {
 		warnSpy.mockRestore();
 	});
 
-	it('detects a TV season folder and links only the matching season', async () => {
-		mkdirSync(join(stagingRoot, 'tv'), { recursive: true });
+	it('detects a TV season folder in jellyfin and links only the matching season', async () => {
+		mkdirSync(join(jellyfinRoot, 'tv'), { recursive: true });
 		const [season1] = testDb
 			.insert(discs)
 			.values({ title: 'Breaking Bad', mediaType: 'tv', season: 1, watchmodeId: 10 })
@@ -180,7 +192,7 @@ describe('watcher', () => {
 		startWatcher();
 		await new Promise((resolve) => setTimeout(resolve, 300));
 
-		mkdirSync(join(stagingRoot, 'tv', 'Breaking Bad', 'Season 2'), { recursive: true });
+		mkdirSync(join(jellyfinRoot, 'tv', 'Breaking Bad', 'Season 2'), { recursive: true });
 
 		await waitFor(() => {
 			const row = testDb
@@ -188,11 +200,36 @@ describe('watcher', () => {
 				.from(discs)
 				.all()
 				.find((d) => d.id === season2.id);
-			return row?.status === 'staged';
+			return row?.status === 'complete';
 		});
 
 		const rows = testDb.select().from(discs).all();
-		expect(rows.find((d) => d.id === season2.id)?.status).toBe('staged');
+		expect(rows.find((d) => d.id === season2.id)?.status).toBe('complete');
 		expect(rows.find((d) => d.id === season1.id)?.status).toBe('not_started');
+	});
+
+	it('does not auto-link a flat staging folder when multiple discs share the same title', async () => {
+		const [season1] = testDb
+			.insert(discs)
+			.values({ title: 'The Vicar of Dibley', mediaType: 'tv', season: 1, watchmodeId: 20 })
+			.returning()
+			.all();
+		testDb
+			.insert(discs)
+			.values({ title: 'The Vicar of Dibley', mediaType: 'tv', season: 2, watchmodeId: 20 })
+			.run();
+
+		mkdirSync(join(stagingRoot, 'THE_VICAR_OF_DIBLEY_XMAS_SPECIAL'));
+
+		startWatcher();
+
+		await waitFor(() => testDb.select().from(unmatchedFiles).all().length > 0);
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === season1.id);
+		expect(updated?.status).toBe('not_started');
 	});
 });
