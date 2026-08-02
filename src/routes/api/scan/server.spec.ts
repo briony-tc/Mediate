@@ -9,9 +9,16 @@ migrate(testDb, { migrationsFolder: 'drizzle' });
 vi.mock('$lib/server/db', () => ({ db: testDb }));
 
 const lookupUpc = vi.fn();
-vi.mock('$lib/server/clients/upc', () => ({
-	lookupUpc: (...args: unknown[]) => lookupUpc(...args)
-}));
+vi.mock('$lib/server/clients/upc', async () => {
+	const actual =
+		await vi.importActual<typeof import('$lib/server/clients/upc')>('$lib/server/clients/upc');
+	return {
+		...actual,
+		lookupUpc: (...args: unknown[]) => lookupUpc(...args)
+	};
+});
+
+const { UpcLookupUnavailableError } = await import('$lib/server/clients/upc');
 
 const searchTitlesWithFallback = vi.fn();
 vi.mock('$lib/server/clients/watchmode', () => ({
@@ -70,5 +77,21 @@ describe('POST /api/scan', () => {
 		await POST(makeRequest({ barcode: '883929127538' }));
 
 		expect(testDb.select().from(scanEvents).all()).toHaveLength(0);
+	});
+
+	it('returns upcUnavailable instead of crashing when UPCitemdb is rate-limited', async () => {
+		lookupUpc.mockRejectedValue(new UpcLookupUnavailableError('rate limited'));
+
+		const response = await POST(makeRequest({ barcode: '883929127538' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data).toEqual({ upcTitle: null, results: [], upcUnavailable: true });
+	});
+
+	it('re-throws other lookupUpc errors instead of swallowing them', async () => {
+		lookupUpc.mockRejectedValue(new Error('network error'));
+
+		await expect(POST(makeRequest({ barcode: '883929127538' }))).rejects.toThrow('network error');
 	});
 });
