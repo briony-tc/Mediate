@@ -15,10 +15,17 @@ vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 
 const { startWatcher, stopWatcher } = await import('./watcher');
 
+// usePolling's 2000ms interval means detection can take longer than
+// vitest's default 5000ms per-test timeout - see the waitFor comment below.
+vi.setConfig({ testTimeout: 10000 });
+
 let stagingRoot: string;
 let jellyfinRoot: string;
 
-function waitFor(predicate: () => boolean, timeoutMs = 3000, intervalMs = 50): Promise<void> {
+// usePolling (required for reliable behavior across Docker bind mounts onto
+// network storage - see watcher.ts) means detection isn't instant like
+// native inotify, so tests need enough headroom past the 2000ms poll interval.
+function waitFor(predicate: () => boolean, timeoutMs = 8000, intervalMs = 50): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const start = Date.now();
 		const tick = () => {
