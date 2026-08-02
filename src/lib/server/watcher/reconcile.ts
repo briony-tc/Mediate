@@ -7,9 +7,12 @@ import { emit } from '../events';
 
 export type Tree = 'staging' | 'jellyfin';
 
-type ParsedMediaPath =
+type ParsedJellyfinPath =
 	| { mediaType: 'movie'; title: string; season: null }
 	| { mediaType: 'tv'; title: string; season: number | null };
+
+type MatchCandidate = { id: number; title: string };
+type MatchResult = { disc: MatchCandidate; score: number };
 
 /** Matches "Season 1", "Season 01", "Series 1" (UK boxsets), and "S1"/"S01". */
 function parseSeasonNumber(folderName: string): number | null {
@@ -18,12 +21,12 @@ function parseSeasonNumber(folderName: string): number | null {
 }
 
 /**
- * Both STAGING_PATH and JELLYFIN_PATH follow movies/<title>/*.mkv and
- * tv/<title>/<season #>/*.mkv. TV series are barcoded/tracked per season
- * (see discs.season), so a bare tv/<title>/ folder with no season segment
- * yet carries no actionable info and is ignored (returns null).
+ * Jellyfin's library strictly follows movies/<title>/*.mkv and
+ * tv/<title>/<season #>/*.mkv (confirmed against the real server layout).
+ * TV is tracked per season, so a bare tv/<title>/ folder with no season
+ * segment yet carries no actionable info and is ignored (returns null).
  */
-export function parseMediaPath(relativePath: string): ParsedMediaPath | null {
+export function parseJellyfinPath(relativePath: string): ParsedJellyfinPath | null {
 	const segments = relativePath.split(sep).filter(Boolean);
 	if (segments.length < 2) return null;
 
@@ -39,6 +42,19 @@ export function parseMediaPath(relativePath: string): ParsedMediaPath | null {
 	}
 
 	return null;
+}
+
+/**
+ * Staging is MakeMKV's raw output: one flat folder per rip, named after the
+ * disc's own volume label (e.g. "THE_VICAR_OF_DIBLEY_XMAS_SPECIAL") - no
+ * movies/tv/season structure exists yet, that only gets created once when
+ * content is moved into Jellyfin. Only the top-level rip folder is
+ * meaningful; anything nested deeper inside it is ignored.
+ */
+export function parseStagingPath(relativePath: string): { title: string } | null {
+	const segments = relativePath.split(sep).filter(Boolean);
+	if (segments.length !== 1) return null;
+	return { title: segments[0] };
 }
 
 function applyStatusTransition(discId: number, tree: Tree, path: string) {
@@ -67,6 +83,44 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 }
 
 /**
+ * Staging's flat folder name carries no season signal, so if multiple
+ * not_started rows share the exact same title (e.g. seasons 1/2/3 of the
+ * same show, or a specials compilation with no obvious season), we cannot
+ * safely tell which one a rip belongs to - auto-linking would guess. Those
+ * cases always fall through to manual review instead.
+ */
+function isAutoLinkSafe(match: MatchResult, candidates: MatchCandidate[]): boolean {
+	return candidates.filter((c) => c.title === match.disc.title).length === 1;
+}
+
+function recordUnmatched(
+	absolutePath: string,
+	tree: Tree,
+	existing: typeof unmatchedFiles.$inferSelect | undefined,
+	match: MatchResult | null
+) {
+	const bestGuessDiscId = match && match.score >= SUGGEST_THRESHOLD ? match.disc.id : null;
+	const bestGuessScore = match?.score ?? null;
+
+	if (existing) {
+		db.update(unmatchedFiles)
+			.set({ bestGuessDiscId, bestGuessScore })
+			.where(eq(unmatchedFiles.id, existing.id))
+			.run();
+	} else {
+		db.insert(unmatchedFiles)
+			.values({ path: absolutePath, tree, bestGuessDiscId, bestGuessScore })
+			.run();
+	}
+}
+
+function resolveUnmatched(existing: typeof unmatchedFiles.$inferSelect | undefined) {
+	if (existing) {
+		db.delete(unmatchedFiles).where(eq(unmatchedFiles.id, existing.id)).run();
+	}
+}
+
+/**
  * Called for every file/folder chokidar sees (both on startup baseline scan and
  * live changes). Idempotent: re-seeing a path already linked to a disc, or
  * already resolved (linked/ignored) in unmatchedFiles, is a no-op. A path
@@ -92,51 +146,51 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 		.get();
 	if (existingUnmatched && existingUnmatched.resolution !== 'unresolved') return;
 
-	const parsed = parseMediaPath(relativePath);
-	if (!parsed) return;
+	if (tree === 'jellyfin') {
+		const parsed = parseJellyfinPath(relativePath);
+		if (!parsed) return;
 
-	// Staging only promotes genuinely fresh discs. Jellyfin is authoritative
-	// proof of completion regardless of whether staging was ever observed for
-	// this disc (e.g. content ripped/placed before this app existed, then
-	// scanned in afterward) - so it matches both not_started and staged.
-	const conditions = [
-		eq(discs.mediaType, parsed.mediaType),
-		tree === 'staging'
-			? eq(discs.status, 'not_started')
-			: inArray(discs.status, ['not_started', 'staged'])
-	];
-	if (parsed.mediaType === 'tv') {
-		conditions.push(
-			parsed.season === null ? isNull(discs.season) : eq(discs.season, parsed.season)
-		);
-	}
-	const candidates = db
-		.select()
-		.from(discs)
-		.where(and(...conditions))
-		.all();
-
-	const match = findBestDiscMatch(parsed.title, candidates);
-
-	if (match && match.score >= AUTO_MATCH_THRESHOLD) {
-		applyStatusTransition(match.disc.id, tree, absolutePath);
-		if (existingUnmatched) {
-			db.delete(unmatchedFiles).where(eq(unmatchedFiles.id, existingUnmatched.id)).run();
+		// Jellyfin is authoritative proof of completion regardless of whether
+		// staging was ever observed for this disc (e.g. content ripped/placed
+		// before this app existed, then scanned in afterward).
+		const conditions = [
+			eq(discs.mediaType, parsed.mediaType),
+			inArray(discs.status, ['not_started', 'staged'])
+		];
+		if (parsed.mediaType === 'tv') {
+			conditions.push(
+				parsed.season === null ? isNull(discs.season) : eq(discs.season, parsed.season)
+			);
 		}
+		const candidates = db
+			.select()
+			.from(discs)
+			.where(and(...conditions))
+			.all();
+
+		const match = findBestDiscMatch(parsed.title, candidates);
+
+		if (match && match.score >= AUTO_MATCH_THRESHOLD) {
+			applyStatusTransition(match.disc.id, tree, absolutePath);
+			resolveUnmatched(existingUnmatched);
+			return;
+		}
+
+		recordUnmatched(absolutePath, tree, existingUnmatched, match);
 		return;
 	}
 
-	const bestGuessDiscId = match && match.score >= SUGGEST_THRESHOLD ? match.disc.id : null;
-	const bestGuessScore = match?.score ?? null;
+	const parsed = parseStagingPath(relativePath);
+	if (!parsed) return;
 
-	if (existingUnmatched) {
-		db.update(unmatchedFiles)
-			.set({ bestGuessDiscId, bestGuessScore })
-			.where(eq(unmatchedFiles.id, existingUnmatched.id))
-			.run();
-	} else {
-		db.insert(unmatchedFiles)
-			.values({ path: absolutePath, tree, bestGuessDiscId, bestGuessScore })
-			.run();
+	const candidates = db.select().from(discs).where(eq(discs.status, 'not_started')).all();
+	const match = findBestDiscMatch(parsed.title, candidates);
+
+	if (match && match.score >= AUTO_MATCH_THRESHOLD && isAutoLinkSafe(match, candidates)) {
+		applyStatusTransition(match.disc.id, tree, absolutePath);
+		resolveUnmatched(existingUnmatched);
+		return;
 	}
+
+	recordUnmatched(absolutePath, tree, existingUnmatched, match);
 }

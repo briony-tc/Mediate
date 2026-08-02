@@ -16,12 +16,27 @@
 	unmatched = data.unmatchedFiles;
 
 	let disconnect: (() => void) | undefined;
+	// Per-unmatched-file disc picker selection - defaults to the auto-guess,
+	// but a flat staging folder name can't always tell which season a rip
+	// belongs to (e.g. multiple seasons share the same show title), so the
+	// user can pick a different candidate than the guess.
+	let selectedDiscId = $state<Record<number, number | undefined>>({});
+	function seedSelection(files: typeof data.unmatchedFiles) {
+		for (const file of files) {
+			if (!(file.id in selectedDiscId)) {
+				selectedDiscId[file.id] = file.bestGuessDiscId ?? undefined;
+			}
+		}
+	}
+	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
+	seedSelection(data.unmatchedFiles);
 
 	// Keeps both in sync if `data` changes after the initial render (e.g.
 	// client-side navigation revalidates load()).
 	$effect(() => {
 		discStore.discs = data.discs;
 		unmatched = data.unmatchedFiles;
+		seedSelection(data.unmatchedFiles);
 	});
 
 	onMount(() => {
@@ -47,6 +62,15 @@
 	function discTitle(id: number | null) {
 		if (id === null) return `#${id}`;
 		return discStore.discs.find((d) => d.id === id)?.title ?? `#${id}`;
+	}
+
+	function discLabel(disc: (typeof discStore.discs)[number]) {
+		const season = disc.season ? ` — Season ${disc.season}` : '';
+		return `${disc.title}${season} (${disc.mediaType})`;
+	}
+
+	function linkableDiscs() {
+		return discStore.discs.filter((d) => d.status !== 'complete');
 	}
 
 	async function link(unmatchedFileId: number, discId: number) {
@@ -89,12 +113,23 @@
 									(file.bestGuessScore ?? 0) * 100
 								)}%)
 							</p>
-							<button
-								class="mt-2 rounded-md border px-3 py-1 text-sm"
-								onclick={() => link(file.id, file.bestGuessDiscId!)}
-							>
-								Link
-							</button>
+						{/if}
+						{#if linkableDiscs().length > 0}
+							<div class="mt-2 flex flex-wrap items-center gap-2">
+								<select bind:value={selectedDiscId[file.id]} class="rounded-md border p-1 text-sm">
+									<option value={undefined}>Pick a disc…</option>
+									{#each linkableDiscs() as disc (disc.id)}
+										<option value={disc.id}>{discLabel(disc)}</option>
+									{/each}
+								</select>
+								<button
+									class="rounded-md border px-3 py-1 text-sm"
+									disabled={selectedDiscId[file.id] === undefined}
+									onclick={() => link(file.id, selectedDiscId[file.id]!)}
+								>
+									Link
+								</button>
+							</div>
 						{/if}
 						<button
 							class="mt-2 ml-2 rounded-md border px-3 py-1 text-sm"

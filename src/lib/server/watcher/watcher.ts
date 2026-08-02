@@ -1,19 +1,19 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { relative, join } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { serverEnv } from '../env';
 import { onFileSeen, type Tree } from './reconcile';
 
 /**
- * The convention requires movies/<title>/ and tv/<title>/<season>/ directly
- * under STAGING_PATH/JELLYFIN_PATH - a root pointed one level too high (or
- * too low) silently matches nothing, with no error, which is very hard to
+ * Jellyfin's convention requires movies/<title>/ and tv/<title>/<season>/
+ * directly under JELLYFIN_PATH - a root pointed one level too high (or too
+ * low) silently matches nothing, with no error, which is very hard to
  * notice. Warn loudly at boot instead.
  */
-function warnIfMisconfigured(root: string, label: string) {
+function warnIfJellyfinPathMisconfigured(root: string) {
 	if (!existsSync(join(root, 'movies')) && !existsSync(join(root, 'tv'))) {
 		console.warn(
-			`[watcher] ${label} ("${root}") has no "movies" or "tv" subfolder. ` +
+			`[watcher] JELLYFIN_PATH ("${root}") has no "movies" or "tv" subfolder. ` +
 				'It must point directly at the folder that contains them - check for an extra ' +
 				'nesting level (e.g. a path ending one directory too high).'
 		);
@@ -21,16 +21,29 @@ function warnIfMisconfigured(root: string, label: string) {
 }
 
 /**
+ * Staging is flat (no movies/tv convention - see parseStagingPath), so the
+ * best available sanity check is existence/non-emptiness. This also catches
+ * the case where a Docker bind mount's host source path doesn't actually
+ * exist: Docker silently creates an empty directory instead of erroring.
+ */
+function warnIfStagingPathMisconfigured(root: string) {
+	if (!existsSync(root) || readdirSync(root).length === 0) {
+		console.warn(
+			`[watcher] STAGING_PATH ("${root}") does not exist or is empty. If this is a Docker ` +
+				'bind mount, a missing host source path is silently mounted as an empty directory ' +
+				'instead of erroring - double check the real host path is correct.'
+		);
+	}
+}
+
+/**
  * Only 'addDir' is watched, not 'add': individual files live one level
  * deeper than depth allows, so a folder's own creation is the signal we
- * react to - matching happens at folder granularity, not per-file. Depth 3
- * covers movies/<title>/ (2 levels) and tv/<title>/<season>/ (3 levels) -
- * TV is tracked per season (see discs.season), so the season folder itself
- * needs to be visible, not just the show folder above it.
+ * react to - matching happens at folder granularity, not per-file.
  */
-function watchTree(root: string, tree: Tree): FSWatcher {
+function watchTree(root: string, tree: Tree, depth: number): FSWatcher {
 	const watcher = watch(root, {
-		depth: 3,
+		depth,
 		ignoreInitial: false,
 		awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 200 }
 	});
@@ -47,12 +60,14 @@ const g = globalThis as unknown as { __mediaLibraryWatchers?: FSWatcher[] };
 export function startWatcher() {
 	if (g.__mediaLibraryWatchers) return;
 
-	warnIfMisconfigured(serverEnv.STAGING_PATH, 'STAGING_PATH');
-	warnIfMisconfigured(serverEnv.JELLYFIN_PATH, 'JELLYFIN_PATH');
+	warnIfStagingPathMisconfigured(serverEnv.STAGING_PATH);
+	warnIfJellyfinPathMisconfigured(serverEnv.JELLYFIN_PATH);
 
 	g.__mediaLibraryWatchers = [
-		watchTree(serverEnv.STAGING_PATH, 'staging'),
-		watchTree(serverEnv.JELLYFIN_PATH, 'jellyfin')
+		// Staging is flat (one rip folder per disc) - depth 1 is enough.
+		watchTree(serverEnv.STAGING_PATH, 'staging', 1),
+		// Jellyfin needs movies/<title>/ (2) and tv/<title>/<season>/ (3).
+		watchTree(serverEnv.JELLYFIN_PATH, 'jellyfin', 3)
 	];
 }
 
