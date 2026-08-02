@@ -86,6 +86,38 @@ describe('POST /api/rip-complete', () => {
 		expect(updated?.status).toBe('complete');
 	});
 
+	it('promotes a disc that was manually linked (status staged) while the rip was still running', async () => {
+		// e.g. the user resolved an ambiguous "Needs attention" match via
+		// /api/link before makemkvcon finished writing - the disc ends up
+		// 'staged' (not 'ripping') by the time this webhook fires, but
+		// stagedPath already points at this exact folder, so it's still safe
+		// to promote once the rip is confirmed done.
+		const [disc] = testDb
+			.insert(discs)
+			.values({
+				title: "A Bug's Life",
+				mediaType: 'movie',
+				watchmodeId: 1,
+				status: 'staged',
+				stagedPath: join(stagingRoot, 'BUGSLIFE_DISK1A_PROJECT_FILE')
+			})
+			.returning()
+			.all();
+		mkdirSync(join(stagingRoot, 'BUGSLIFE_DISK1A_PROJECT_FILE'));
+		writeFileSync(join(stagingRoot, 'BUGSLIFE_DISK1A_PROJECT_FILE', 'A1_t00.mkv'), 'x');
+
+		const response = await POST(makeRequest({ stagingFolderName: 'BUGSLIFE_DISK1A_PROJECT_FILE' }));
+		const data = await response.json();
+
+		expect(data.outcome).toBe('promoted');
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('complete');
+	});
+
 	it('leaves an ambiguous/unmatched rip for manual review instead of guessing', async () => {
 		const response = await POST(makeRequest({ stagingFolderName: 'Some Unrecognized Disc' }));
 		const data = await response.json();
