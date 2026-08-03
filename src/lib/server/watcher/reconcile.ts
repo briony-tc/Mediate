@@ -1,5 +1,5 @@
 import { sep } from 'node:path';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { db } from '../db';
 import { discs, unmatchedFiles } from '../db/schema';
 import { AUTO_MATCH_THRESHOLD, SUGGEST_THRESHOLD, findBestDiscMatch } from '../matching/match';
@@ -8,7 +8,7 @@ import { emit } from '../events';
 export type Tree = 'staging' | 'jellyfin';
 
 type ParsedJellyfinPath =
-	| { mediaType: 'movie'; title: string; season: null }
+	| { mediaType: 'movie'; title: string; season: null; year: number | null }
 	| { mediaType: 'tv'; title: string; season: number | null };
 
 type MatchCandidate = { id: number; title: string };
@@ -17,6 +17,12 @@ type MatchResult = { disc: MatchCandidate; score: number };
 /** Matches "Season 1", "Season 01", "Series 1" (UK boxsets), and "S1"/"S01". */
 function parseSeasonNumber(folderName: string): number | null {
 	const match = folderName.match(/(?:season|series)\s*0*(\d+)/i) ?? folderName.match(/^s0*(\d+)$/i);
+	return match ? Number(match[1]) : null;
+}
+
+/** Matches a trailing "(YYYY)" - the convention promoteToJellyfin now files movies under. */
+function parseMovieYear(title: string): number | null {
+	const match = title.match(/\((\d{4})\)\s*$/);
 	return match ? Number(match[1]) : null;
 }
 
@@ -33,7 +39,7 @@ export function parseJellyfinPath(relativePath: string): ParsedJellyfinPath | nu
 	const [category, title] = segments;
 
 	if (category === 'movies') {
-		return { mediaType: 'movie', title, season: null };
+		return { mediaType: 'movie', title, season: null, year: parseMovieYear(title) };
 	}
 
 	if (category === 'tv') {
@@ -66,8 +72,11 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 	const status = tree === 'staging' ? 'ripping' : 'complete';
 
 	if (tree === 'staging') {
+		// armedAt is cleared here regardless of which path led to this transition
+		// (armed fast path or fuzzy-match fallback) - once a disc is actually
+		// ripping, it's no longer "waiting to be armed".
 		db.update(discs)
-			.set({ status, stagedPath: path, stagedAt: now, updatedAt: now })
+			.set({ status, stagedPath: path, stagedAt: now, updatedAt: now, armedAt: null })
 			.where(eq(discs.id, discId))
 			.run();
 	} else {
@@ -170,6 +179,16 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 			conditions.push(
 				parsed.season === null ? isNull(discs.season) : eq(discs.season, parsed.season)
 			);
+		} else if (parsed.year !== null) {
+			// Disambiguates multiple discs sharing a title but different release
+			// years (e.g. several physical releases of the same film). A disc
+			// with no stored year is still treated as a plausible candidate
+			// rather than excluded - this only needs to rule out a *different*,
+			// known-year match, not everything without one (this is what lets an
+			// older, year-less disc still re-match a folder later renamed to
+			// follow the "Title (Year)" convention).
+			// non-null: two arguments are always passed, so `or` never returns undefined here
+			conditions.push(or(eq(discs.year, parsed.year), isNull(discs.year))!);
 		}
 		const candidates = db
 			.select()
@@ -191,6 +210,23 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 
 	const parsed = parseStagingPath(relativePath);
 	if (!parsed) return;
+
+	// If the user armed a disc in the UI before inserting it, trust that
+	// completely - link to it unconditionally, no fuzzy matching, regardless of
+	// what MakeMKV named the folder. This is the whole point of arming: it
+	// removes the guesswork (and the ambiguous/wrong-guess cases) that fuzzy
+	// matching on folder name alone can't avoid.
+	const armed = db
+		.select()
+		.from(discs)
+		.where(and(eq(discs.status, 'not_started'), isNotNull(discs.armedAt)))
+		.get();
+
+	if (armed) {
+		applyStatusTransition(armed.id, tree, absolutePath);
+		resolveUnmatched(existingUnmatched);
+		return;
+	}
 
 	const candidates = db.select().from(discs).where(eq(discs.status, 'not_started')).all();
 	const match = findBestDiscMatch(parsed.title, candidates);

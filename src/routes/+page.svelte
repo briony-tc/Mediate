@@ -35,6 +35,7 @@
 			sortKey
 		)
 	);
+	let armedDisc = $derived(discStore.discs.find((d) => d.armedAt !== null));
 	let unmatched = $state<typeof data.unmatchedFiles>([]);
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
 	unmatched = data.unmatchedFiles;
@@ -150,6 +151,33 @@
 		}
 	}
 
+	// Arming is a same-tab user action, not an async filesystem event, so - like
+	// link/ignore/removeDisc below - it patches local state directly from the
+	// fetch response rather than waiting on an SSE round-trip.
+	async function arm(discId: number) {
+		const response = await fetch('/api/arm', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId })
+		});
+		if (!response.ok) return;
+		const now = Date.now();
+		discStore.discs = discStore.discs.map((d) => ({
+			...d,
+			armedAt: d.id === discId ? now : null
+		}));
+	}
+
+	async function unarm(discId: number) {
+		const response = await fetch('/api/unarm', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId })
+		});
+		if (!response.ok) return;
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? { ...d, armedAt: null } : d));
+	}
+
 	async function ignore(unmatchedFileId: number) {
 		const response = await fetch('/api/ignore', {
 			method: 'POST',
@@ -192,6 +220,20 @@
 	</div>
 
 	<LibraryStats discs={discStore.discs} />
+
+	{#if armedDisc}
+		<section
+			class="rounded-md border border-blue-300 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950"
+		>
+			<p class="text-sm">
+				<span class="font-medium">Armed for next rip:</span>
+				{discLabel(armedDisc)} — waiting for the disc in the drive.
+			</p>
+			<button class="mt-2 rounded-md border px-3 py-1 text-sm" onclick={() => unarm(armedDisc!.id)}>
+				Cancel
+			</button>
+		</section>
+	{/if}
 
 	{#if unmatched.length > 0}
 		<section class="space-y-3">
@@ -303,6 +345,20 @@
 							</div>
 						{:else}
 							<div class="flex items-center gap-2">
+								{#if disc.armedAt !== null}
+									<span
+										class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+									>
+										Armed
+									</span>
+								{:else if disc.status === 'not_started'}
+									<button
+										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+										onclick={() => arm(disc.id)}
+									>
+										Start ripping
+									</button>
+								{/if}
 								<span class="rounded-full px-3 py-1 text-xs font-medium {statusClass[disc.status]}">
 									{statusLabel[disc.status]}
 								</span>

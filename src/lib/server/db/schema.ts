@@ -21,6 +21,11 @@ export const discs = sqliteTable('discs', {
 	genres: text('genres'),
 	barcodeUpc: text('barcode_upc'),
 	rawLookupTitle: text('raw_lookup_title'),
+	// Set when the user picks this disc in the UI as "the one I'm about to
+	// insert" - lets the watcher link the next staging folder to it
+	// unconditionally instead of fuzzy-matching by folder name. Cleared the
+	// moment it actually transitions to 'ripping'. Null the rest of the time.
+	armedAt: integer('armed_at'),
 	stagedPath: text('staged_path'),
 	completePath: text('complete_path'),
 	stagedAt: integer('staged_at'),
