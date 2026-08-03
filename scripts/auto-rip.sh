@@ -88,10 +88,24 @@ mkdir -p "$DEST_HOST"
 # appended into $LOG_FILE once the rip finishes, preserving today's
 # everything-is-logged behavior. Wrapped in a generous outer timeout purely
 # as a safety net against a truly-hung invocation, not as an expected normal
-# duration.
+# duration - raised from 2h to 6h after a real 45-title Blu-ray rip
+# (Abduction, 2011) was still legitimately progressing past the 2h mark and
+# got killed by this timeout. Note that killing the `timeout`-wrapped docker
+# exec client does NOT reliably kill the process it started inside the
+# container (confirmed live: makemkvcon kept running and writing files for
+# a long time after this fired) - so a too-short timeout here doesn't even
+# stop the rip, it just orphans it from this script's ability to notice
+# completion and call the webhook.
+#
+# `-t` allocates a pseudo-TTY for the exec session - confirmed necessary via
+# a live rip on VIKI: without it, makemkvcon's stdio is fully block-buffered
+# once it isn't attached to a real terminal, so the redirected output file
+# saw zero new bytes for 80+ minutes despite the rip actively progressing the
+# whole time. `isatty()` returning true via the pty is what keeps it flushing
+# incrementally so the tail below actually has something to read.
 RIP_OUTPUT=$(mktemp)
 log "Starting rip into $DEST_HOST..."
-timeout 7200 docker exec "$CONTAINER" "$MAKEMKVCON" -r mkv disc:0 all "$DEST_CONTAINER" >"$RIP_OUTPUT" 2>&1 &
+timeout 21600 docker exec -t "$CONTAINER" "$MAKEMKVCON" -r mkv disc:0 all "$DEST_CONTAINER" >"$RIP_OUTPUT" 2>&1 &
 RIP_PID=$!
 
 # MakeMKV's robot-mode PRGV:current,total,max lines give overall job progress
