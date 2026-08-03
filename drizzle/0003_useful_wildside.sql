@@ -1,0 +1,1 @@
+ALTER TABLE `discs` ADD `armed_at` integer;

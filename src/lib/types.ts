@@ -13,6 +13,7 @@ export type Disc = {
 	genres: string | null;
 	barcodeUpc: string | null;
 	rawLookupTitle: string | null;
+	armedAt: number | null;
 	stagedPath: string | null;
 	completePath: string | null;
 	stagedAt: number | null;
