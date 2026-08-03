@@ -113,6 +113,24 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
+	it('resets a leftover ripProgressPercent from a previous attempt when a disc starts ripping again', () => {
+		const disc = seedDisc({
+			title: 'Inception',
+			status: 'not_started',
+			ripProgressPercent: 87
+		});
+
+		onFileSeen('/staging/Inception', 'Inception', 'staging');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('ripping');
+		expect(updated?.ripProgressPercent).toBeNull();
+	});
+
 	it('matches a messy real-world MakeMKV disc-label folder name', () => {
 		const disc = seedDisc({ title: 'FernGully: The Last Rainforest', status: 'not_started' });
 		const absolute = '/staging/FERNGULLY_THE_LAST_RAINFOREST';

@@ -26,6 +26,10 @@ export const discs = sqliteTable('discs', {
 	// unconditionally instead of fuzzy-matching by folder name. Cleared the
 	// moment it actually transitions to 'ripping'. Null the rest of the time.
 	armedAt: integer('armed_at'),
+	// Latest known percent-complete (0-100) reported by the auto-rip script
+	// while status is 'ripping', via /api/rip-progress. Null before the first
+	// report arrives, or once the disc leaves 'ripping'.
+	ripProgressPercent: integer('rip_progress_percent'),
 	stagedPath: text('staged_path'),
 	completePath: text('complete_path'),
 	stagedAt: integer('staged_at'),

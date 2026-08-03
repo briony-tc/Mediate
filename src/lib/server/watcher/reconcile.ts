@@ -74,9 +74,18 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 	if (tree === 'staging') {
 		// armedAt is cleared here regardless of which path led to this transition
 		// (armed fast path or fuzzy-match fallback) - once a disc is actually
-		// ripping, it's no longer "waiting to be armed".
+		// ripping, it's no longer "waiting to be armed". ripProgressPercent is
+		// also reset, so a re-rip after a failed attempt doesn't show a stale
+		// leftover percent from the previous try.
 		db.update(discs)
-			.set({ status, stagedPath: path, stagedAt: now, updatedAt: now, armedAt: null })
+			.set({
+				status,
+				stagedPath: path,
+				stagedAt: now,
+				updatedAt: now,
+				armedAt: null,
+				ripProgressPercent: null
+			})
 			.where(eq(discs.id, discId))
 			.run();
 	} else {
