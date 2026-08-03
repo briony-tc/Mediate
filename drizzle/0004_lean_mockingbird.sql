@@ -1,0 +1,1 @@
+ALTER TABLE `discs` ADD `rip_progress_percent` integer;

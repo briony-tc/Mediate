@@ -14,6 +14,7 @@ export type Disc = {
 	barcodeUpc: string | null;
 	rawLookupTitle: string | null;
 	armedAt: number | null;
+	ripProgressPercent: number | null;
 	stagedPath: string | null;
 	completePath: string | null;
 	stagedAt: number | null;
@@ -27,5 +28,6 @@ export type StatusChangeEvent = {
 	status: DiscStatus;
 	stagedPath?: string | null;
 	completePath?: string | null;
+	ripProgressPercent?: number | null;
 	updatedAt: number;
 };
