@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
@@ -6,16 +5,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { discs } from '$lib/server/db/schema';
 import { serverEnv } from '$lib/server/env';
+import { isAuthorizedRipWebhook } from '$lib/server/webhookAuth';
 import { onFileSeen } from '$lib/server/watcher/reconcile';
 import { promoteToJellyfin } from '$lib/server/promote';
 import { notifyAll } from '$lib/server/push';
-
-function isAuthorized(request: Request): boolean {
-	const header = request.headers.get('authorization') ?? '';
-	const provided = Buffer.from(header.replace(/^Bearer\s+/i, ''));
-	const expected = Buffer.from(serverEnv.RIP_WEBHOOK_SECRET);
-	return provided.length === expected.length && timingSafeEqual(provided, expected);
-}
 
 /**
  * Called by the auto-rip script on VIKI once `makemkvcon` exits successfully
@@ -25,7 +18,7 @@ function isAuthorized(request: Request): boolean {
  * the end).
  */
 export const POST: RequestHandler = async ({ request }) => {
-	if (!isAuthorized(request)) {
+	if (!isAuthorizedRipWebhook(request)) {
 		return json({ error: 'unauthorized' }, { status: 401 });
 	}
 
