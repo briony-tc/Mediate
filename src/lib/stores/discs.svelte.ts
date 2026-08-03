@@ -12,7 +12,10 @@ export function mergeEvent(discs: Disc[], event: StatusChangeEvent): Disc[] {
 		status: event.status,
 		updatedAt: event.updatedAt,
 		...(event.stagedPath !== undefined ? { stagedPath: event.stagedPath } : {}),
-		...(event.completePath !== undefined ? { completePath: event.completePath } : {})
+		...(event.completePath !== undefined ? { completePath: event.completePath } : {}),
+		...(event.ripProgressPercent !== undefined
+			? { ripProgressPercent: event.ripProgressPercent }
+			: {})
 	};
 	return next;
 }

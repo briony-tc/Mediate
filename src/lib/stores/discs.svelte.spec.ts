@@ -17,6 +17,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 		barcodeUpc: null,
 		rawLookupTitle: null,
 		armedAt: null,
+		ripProgressPercent: null,
 		stagedPath: null,
 		completePath: null,
 		stagedAt: null,
