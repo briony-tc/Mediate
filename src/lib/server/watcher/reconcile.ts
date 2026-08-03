@@ -27,6 +27,25 @@ function parseMovieYear(title: string): number | null {
 }
 
 /**
+ * Jellyfin's recognized "extras" subfolder names (shown as Special Features
+ * on a movie's page) - promoteToJellyfin now files bonus content into
+ * "behind the scenes". A file nested under one of these must not be treated
+ * as a match candidate for the movie itself, or the watcher could re-match
+ * it and overwrite the disc's completePath with the extras file instead of
+ * the real movie.
+ */
+const JELLYFIN_EXTRAS_FOLDERS = new Set([
+	'behind the scenes',
+	'deleted scenes',
+	'interviews',
+	'scenes',
+	'shorts',
+	'featurettes',
+	'trailers',
+	'other'
+]);
+
+/**
  * Jellyfin's library strictly follows movies/<title>/*.mkv and
  * tv/<title>/<season #>/*.mkv (confirmed against the real server layout).
  * TV is tracked per season, so a bare tv/<title>/ folder with no season
@@ -39,6 +58,9 @@ export function parseJellyfinPath(relativePath: string): ParsedJellyfinPath | nu
 	const [category, title] = segments;
 
 	if (category === 'movies') {
+		if (segments.length > 2 && JELLYFIN_EXTRAS_FOLDERS.has(segments[2].toLowerCase())) {
+			return null;
+		}
 		return { mediaType: 'movie', title, season: null, year: parseMovieYear(title) };
 	}
 

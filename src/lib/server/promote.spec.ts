@@ -63,7 +63,7 @@ describe('promoteToJellyfin - movies', () => {
 		expect(updated.completePath).toBe(dest);
 	});
 
-	it('moves only the largest file, deletes the rest, and removes the now-empty staging folder', () => {
+	it('moves the largest file as the main feature, the rest into "behind the scenes", and removes the now-empty staging folder', () => {
 		writeFileSync(join(stagingFolder, 'main.mkv'), 'x'.repeat(100));
 		writeFileSync(join(stagingFolder, 'extra.mkv'), 'x');
 		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
@@ -71,8 +71,27 @@ describe('promoteToJellyfin - movies', () => {
 		const result = promoteToJellyfin(disc, stagingFolder);
 
 		expect(result).toBe('promoted');
-		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception'))).toEqual(['Inception.mkv']);
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception')).sort()).toEqual([
+			'Inception.mkv',
+			'behind the scenes'
+		]);
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception', 'behind the scenes'))).toEqual([
+			'Inception - Behind the Scenes.mkv'
+		]);
 		expect(existsSync(stagingFolder)).toBe(false);
+	});
+
+	it('numbers multiple extras when there is more than one', () => {
+		writeFileSync(join(stagingFolder, 'main.mkv'), 'x'.repeat(100));
+		writeFileSync(join(stagingFolder, 'extra1.mkv'), 'x'.repeat(50));
+		writeFileSync(join(stagingFolder, 'extra2.mkv'), 'x'.repeat(20));
+		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
+
+		promoteToJellyfin(disc, stagingFolder);
+
+		expect(
+			readdirSync(join(jellyfinRoot, 'movies', 'Inception', 'behind the scenes')).sort()
+		).toEqual(['Inception - Behind the Scenes 1.mkv', 'Inception - Behind the Scenes 2.mkv']);
 	});
 
 	it('sanitizes filesystem-unsafe characters out of the title', () => {

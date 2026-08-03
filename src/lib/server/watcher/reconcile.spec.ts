@@ -78,6 +78,20 @@ describe('parseJellyfinPath', () => {
 		expect(parseJellyfinPath('.DS_Store')).toBeNull();
 		expect(parseJellyfinPath('random-file.txt')).toBeNull();
 	});
+
+	it("ignores files nested under a Jellyfin extras subfolder (not the movie's own file)", () => {
+		expect(
+			parseJellyfinPath(
+				['movies', 'Inception (2010)', 'behind the scenes', 'making-of.mkv'].join(sep)
+			)
+		).toBeNull();
+		expect(
+			parseJellyfinPath(['movies', 'Inception (2010)', 'deleted scenes', 'cut.mkv'].join(sep))
+		).toBeNull();
+		expect(
+			parseJellyfinPath(['movies', 'Inception (2010)', 'Behind The Scenes', 'x.mkv'].join(sep))
+		).toBeNull();
+	});
 });
 
 describe('parseStagingPath', () => {
@@ -288,6 +302,31 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 			.find((d) => d.id === disc.id);
 		expect(updated?.status).toBe('complete');
 		expect(updated?.completePath).toBe(renamed);
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+	});
+
+	it('does not overwrite an already-complete disc\'s completePath when seeing a file in its "behind the scenes" extras folder', () => {
+		const originalPath = '/jellyfin/movies/Inception (2010)/Inception (2010).mkv';
+		const disc = seedDisc({
+			title: 'Inception',
+			year: 2010,
+			status: 'complete',
+			completePath: originalPath
+		});
+		const extrasPath = '/jellyfin/movies/Inception (2010)/behind the scenes/making-of.mkv';
+
+		onFileSeen(
+			extrasPath,
+			['movies', 'Inception (2010)', 'behind the scenes', 'making-of.mkv'].join(sep),
+			'jellyfin'
+		);
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.completePath).toBe(originalPath);
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
