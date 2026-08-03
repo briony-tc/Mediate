@@ -83,6 +83,20 @@ describe('promoteToJellyfin - movies', () => {
 
 		expect(readdirSync(join(jellyfinRoot, 'movies'))).toEqual(['Ocean The Sequel']);
 	});
+
+	it('includes the release year in the folder and file name when the disc has one', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
+		const disc = seedDisc({ title: 'Inception', mediaType: 'movie', year: 2010 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const dest = join(jellyfinRoot, 'movies', 'Inception (2010)', 'Inception (2010).mkv');
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception (2010)'))).toEqual([
+			'Inception (2010).mkv'
+		]);
+		expect(testDb.select().from(discs).all()[0].completePath).toBe(dest);
+	});
 });
 
 describe('promoteToJellyfin - tv', () => {

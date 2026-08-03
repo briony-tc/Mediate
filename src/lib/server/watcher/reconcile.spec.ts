@@ -35,7 +35,17 @@ describe('parseJellyfinPath', () => {
 		expect(parseJellyfinPath(['movies', 'Inception (2010)', 'Inception.mkv'].join(sep))).toEqual({
 			mediaType: 'movie',
 			title: 'Inception (2010)',
-			season: null
+			season: null,
+			year: 2010
+		});
+	});
+
+	it('returns a null year for a bare movie folder with no "(Year)" suffix', () => {
+		expect(parseJellyfinPath(['movies', 'Inception', 'Inception.mkv'].join(sep))).toEqual({
+			mediaType: 'movie',
+			title: 'Inception',
+			season: null,
+			year: null
 		});
 	});
 
@@ -322,6 +332,43 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 	it('ignores paths that do not follow the movies/tv convention', () => {
 		onFileSeen('/jellyfin/.DS_Store', '.DS_Store', 'jellyfin');
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+	});
+
+	describe('movie year disambiguation', () => {
+		it('links a year-suffixed folder to the matching-year disc, not other releases of the same title', () => {
+			const version1954 = seedDisc({ title: 'A Star Is Born', mediaType: 'movie', year: 1954 });
+			const version2018 = seedDisc({ title: 'A Star Is Born', mediaType: 'movie', year: 2018 });
+			const absolute = '/jellyfin/movies/A Star Is Born (2018)/A Star Is Born (2018).mkv';
+
+			onFileSeen(
+				absolute,
+				['movies', 'A Star Is Born (2018)', 'A Star Is Born (2018).mkv'].join(sep),
+				'jellyfin'
+			);
+
+			const rows = testDb.select().from(discs).all();
+			expect(rows.find((d) => d.id === version2018.id)?.status).toBe('complete');
+			expect(rows.find((d) => d.id === version1954.id)?.status).toBe('not_started');
+		});
+
+		it('still matches a disc with no stored year when it is the only candidate (renamed-folder case)', () => {
+			// e.g. a disc scanned before this convention existed, whose Jellyfin
+			// folder later got manually renamed to "Title (Year)" - the disc's own
+			// `year` column is still null, but it should still be treated as a
+			// plausible candidate rather than excluded.
+			const disc = seedDisc({ title: 'Inception', mediaType: 'movie', year: null });
+			const absolute = '/jellyfin/movies/Inception (2010)/Inception.mkv';
+
+			onFileSeen(absolute, ['movies', 'Inception (2010)', 'Inception.mkv'].join(sep), 'jellyfin');
+
+			expect(
+				testDb
+					.select()
+					.from(discs)
+					.all()
+					.find((d) => d.id === disc.id)?.status
+			).toBe('complete');
+		});
 	});
 });
 

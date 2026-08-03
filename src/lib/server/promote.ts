@@ -20,6 +20,17 @@ function sanitizeForFilename(title: string): string {
 	return title.replace(/[/\\:*?"<>|]/g, '').trim();
 }
 
+/**
+ * Includes the release year so discs with the same title but different years
+ * (e.g. multiple physical releases of the same film) file into distinct
+ * folders instead of colliding. Falls back to the bare title when the year is
+ * unknown - rare, but Watchmode doesn't guarantee one.
+ */
+function movieFolderName(disc: Disc): string {
+	const safeTitle = sanitizeForFilename(disc.title);
+	return disc.year ? `${safeTitle} (${disc.year})` : safeTitle;
+}
+
 function episodeFileName(title: string, season: number, episode: number): string {
 	const s = String(season).padStart(2, '0');
 	const e = String(episode).padStart(2, '0');
@@ -94,9 +105,10 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 				.map((name) => ({ name, size: statSync(join(stagingFolderAbsolutePath, name)).size }))
 				.sort((a, b) => b.size - a.size);
 
-			const destDir = join(serverEnv.JELLYFIN_PATH, 'movies', safeTitle);
+			const folderName = movieFolderName(disc);
+			const destDir = join(serverEnv.JELLYFIN_PATH, 'movies', folderName);
 			mkdirSync(destDir, { recursive: true });
-			completePath = join(destDir, `${safeTitle}.mkv`);
+			completePath = join(destDir, `${folderName}.mkv`);
 			moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
 		} else {
 			// A TV disc without a season can't be filed - auto-link already
