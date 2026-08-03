@@ -98,10 +98,12 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 		let completePath: string;
 
 		if (disc.mediaType === 'movie') {
-			// Largest file is the main feature; anything else (extras that passed
-			// MakeMKV's minlength filter) is left behind in staging rather than
-			// moved, so nothing is silently dropped.
-			const [largest] = files
+			// Largest file is the main feature; anything else (extras/trailers that
+			// passed MakeMKV's minlength filter) is deleted once the main feature
+			// is safely filed into Jellyfin, rather than left behind indefinitely -
+			// see removeIfEmpty below, which then cleans up the staging folder
+			// itself once it's actually empty.
+			const [largest, ...extras] = files
 				.map((name) => ({ name, size: statSync(join(stagingFolderAbsolutePath, name)).size }))
 				.sort((a, b) => b.size - a.size);
 
@@ -110,6 +112,10 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 			mkdirSync(destDir, { recursive: true });
 			completePath = join(destDir, `${folderName}.mkv`);
 			moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
+
+			for (const extra of extras) {
+				unlinkSync(join(stagingFolderAbsolutePath, extra.name));
+			}
 		} else {
 			// A TV disc without a season can't be filed - auto-link already
 			// requires one (see reconcile.ts), so this shouldn't happen in
