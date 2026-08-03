@@ -142,17 +142,24 @@ else
 fi
 
 # -r = robot mode (machine-readable output, no interactive prompts).
-# "all" (the fallback case above) rips every title MakeMKV's own minlength
-# setting would already have pre-checked in the GUI - this mirrors current
-# manual behavior, not a new heuristic, since it reads the same
-# settings.conf the GUI does. A comma-separated title list (the normal case
-# above) rips just those instead.
 #
-# Run in the background (rather than blocking, as before) so the progress
-# reporter below can tail its robot-mode output while it runs. Output goes to
-# a temp file instead of straight to $LOG_FILE so it can be parsed for
-# PRGV: lines as they arrive; the temp file's full contents still get
-# appended into $LOG_FILE once the rip finishes, preserving today's
+# Real bug found the hard way: MakeMKV's `mkv` command only accepts ONE title
+# id per invocation, or the literal "all" - confirmed via its own usage text
+# ("saves a single title to mkv file"), captured in this log after a rip
+# passed "0,2,5" as one argument. It ran its full (slow) disc analysis first
+# regardless, THEN choked trying to interpret the comma-separated list as a
+# single title selector, printed its own help text, and exited non-zero -
+# having never actually ripped anything. So a comma-separated INCLUDE_IDS
+# list becomes one `mkv` invocation *per title*, run sequentially (never in
+# parallel - they'd be fighting over the same physical disc read). "all"
+# stays a single invocation exactly as before, since it's already one keyword
+# MakeMKV itself understands.
+#
+# Each invocation runs in the background (rather than blocking) so the
+# progress reporter below can tail its robot-mode output while it runs.
+# Output goes to a temp file instead of straight to $LOG_FILE so it can be
+# parsed for PRGV: lines as they arrive; the temp file's full contents still
+# get appended into $LOG_FILE once each title finishes, preserving today's
 # everything-is-logged behavior. Wrapped in a generous outer timeout purely
 # as a safety net against a truly-hung invocation, not as an expected normal
 # duration - raised from 2h to 6h after a real 45-title Blu-ray rip
@@ -170,48 +177,69 @@ fi
 # saw zero new bytes for 80+ minutes despite the rip actively progressing the
 # whole time. `isatty()` returning true via the pty is what keeps it flushing
 # incrementally so the tail below actually has something to read.
-RIP_OUTPUT=$(mktemp)
-log "Starting rip into $DEST_HOST..."
-timeout 21600 docker exec -t "$CONTAINER" "$MAKEMKVCON" -r mkv disc:0 "$RIP_TARGET" "$DEST_CONTAINER" >"$RIP_OUTPUT" 2>&1 &
-RIP_PID=$!
-
+#
 # MakeMKV's robot-mode PRGV:current,total,max lines give overall job progress
-# via total/max (this is what the GUI's own progress bar is driven by) - no
-# explicit "time remaining" field exists, media-library-shelf estimates that
-# itself from percent + elapsed time. Reports at most once per percentage
-# point, roughly every 30s, to media-library-shelf's /api/rip-progress so the
-# UI can show a live estimate. Best-effort only: a failed or missed report
-# here must never abort the rip - mirrors this script's existing philosophy
-# of treating peripheral failures (e.g. eject) as non-fatal.
+# for the *current* title via total/max (this is what the GUI's own progress
+# bar is driven by) - no explicit "time remaining" field exists,
+# media-library-shelf estimates that itself from percent + elapsed time.
+# Reported as an overall percent across every title being ripped for this
+# disc (not just the current one), so the app's progress bar reflects true
+# completion of the whole job, not just whichever title happens to be
+# running. Reports at most once per percentage point, roughly every 30s.
+# Best-effort only: a failed or missed report here must never abort the rip -
+# mirrors this script's existing philosophy of treating peripheral failures
+# (e.g. eject) as non-fatal.
 report_progress() {
+	local rip_pid="$1" rip_output="$2" title_index="$3" total_titles="$4"
 	local last_sent=-1
-	while kill -0 "$RIP_PID" 2>/dev/null; do
+	while kill -0 "$rip_pid" 2>/dev/null; do
 		sleep 30
 		local line
-		line=$(grep -a '^PRGV:' "$RIP_OUTPUT" | tail -1)
+		line=$(grep -a '^PRGV:' "$rip_output" | tail -1)
 		[ -z "$line" ] && continue
-		local total max percent
+		local total max percent overall
 		IFS=',' read -r _ total max <<<"${line#PRGV:}"
 		[ -z "${max:-}" ] || [ "$max" -eq 0 ] && continue
 		percent=$((total * 100 / max))
 		[ "$percent" -eq "$last_sent" ] && continue
 		last_sent=$percent
+		overall=$(((title_index * 100 + percent) / total_titles))
 		curl -sf -X POST "$PROGRESS_WEBHOOK_URL" \
 			-H "Authorization: Bearer $SECRET" \
 			-H "Content-Type: application/json" \
-			-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\", \"percent\": $percent}" \
+			-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\", \"percent\": $overall}" \
 			>>"$LOG_FILE" 2>&1 || true
 	done
 }
-report_progress &
-REPORT_PID=$!
+
+IFS=',' read -ra TITLE_LIST <<<"$RIP_TARGET"
+TOTAL_TITLES=${#TITLE_LIST[@]}
 
 RIP_STATUS=0
-wait "$RIP_PID" || RIP_STATUS=$?
-kill "$REPORT_PID" 2>/dev/null || true
-wait "$REPORT_PID" 2>/dev/null || true
-cat "$RIP_OUTPUT" >>"$LOG_FILE"
-rm -f "$RIP_OUTPUT"
+for i in "${!TITLE_LIST[@]}"; do
+	TITLE_ID="${TITLE_LIST[$i]}"
+	log "Ripping title $TITLE_ID ($((i + 1))/$TOTAL_TITLES) into $DEST_HOST..."
+
+	RIP_OUTPUT=$(mktemp)
+	timeout 21600 docker exec -t "$CONTAINER" "$MAKEMKVCON" -r mkv disc:0 "$TITLE_ID" "$DEST_CONTAINER" >"$RIP_OUTPUT" 2>&1 &
+	RIP_PID=$!
+
+	report_progress "$RIP_PID" "$RIP_OUTPUT" "$i" "$TOTAL_TITLES" &
+	REPORT_PID=$!
+
+	TITLE_STATUS=0
+	wait "$RIP_PID" || TITLE_STATUS=$?
+	kill "$REPORT_PID" 2>/dev/null || true
+	wait "$REPORT_PID" 2>/dev/null || true
+	cat "$RIP_OUTPUT" >>"$LOG_FILE"
+	rm -f "$RIP_OUTPUT"
+
+	if [ "$TITLE_STATUS" -ne 0 ]; then
+		RIP_STATUS=$TITLE_STATUS
+		log "Title $TITLE_ID failed (status $TITLE_STATUS) - aborting remaining titles"
+		break
+	fi
+done
 
 if [ "$RIP_STATUS" -ne 0 ]; then
 	log "makemkvcon exited non-zero (or timed out), aborting (no webhook call)"
