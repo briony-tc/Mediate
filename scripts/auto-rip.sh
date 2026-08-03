@@ -238,4 +238,16 @@ fi
 
 eject "$DRIVE" 2>>"$LOG_FILE" || log "Eject failed (non-fatal)"
 
+# The optical drive and /mnt/storage are both USB-attached on this host -
+# confirmed live that leaving the tray open destabilizes something shared
+# between them badly enough that every other container relying on
+# /mnt/storage stops responding, and closing the tray again is what actually
+# recovers it (not just a coincidental delay). 20s gives a visible "done"
+# signal and a brief window to grab the disc, then auto-closes so the system
+# self-heals instead of staying broken until someone notices and manually
+# closes it.
+sleep 20
+eject -t "$DRIVE" 2>>"$LOG_FILE" \
+	|| log "Tray auto-close failed (non-fatal) - close it manually if containers seem down"
+
 log "=== auto-rip complete ==="
