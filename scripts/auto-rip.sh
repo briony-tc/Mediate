@@ -188,7 +188,7 @@ fi
 # running. Reports at most once per percentage point, roughly every 30s.
 # Best-effort only: a failed or missed report here must never abort the rip -
 # mirrors this script's existing philosophy of treating peripheral failures
-# (e.g. eject) as non-fatal.
+# (e.g. the ownership fix below) as non-fatal.
 report_progress() {
 	local rip_pid="$1" rip_output="$2" title_index="$3" total_titles="$4"
 	local last_sent=-1
@@ -248,9 +248,9 @@ fi
 
 log "Rip finished: $LABEL"
 
-# Non-fatal like the eject call below - a failed chown shouldn't stop the
-# disc from being filed, it would just mean the same Samba permission issue
-# resurfaces if this particular rip ever needs manual attention later.
+# Non-fatal - a failed chown shouldn't stop the disc from being filed, it
+# would just mean the same Samba permission issue resurfaces if this
+# particular rip ever needs manual attention later.
 chown -R "$STAGING_OWNER" "$DEST_HOST" 2>>"$LOG_FILE" \
 	|| log "Could not fix ownership on $DEST_HOST (non-fatal)"
 
@@ -264,18 +264,12 @@ else
 	log "Webhook call failed - disc is ripped but not yet filed/notified, check manually"
 fi
 
-eject "$DRIVE" 2>>"$LOG_FILE" || log "Eject failed (non-fatal)"
-
-# The optical drive and /mnt/storage are both USB-attached on this host -
-# confirmed live that leaving the tray open destabilizes something shared
-# between them badly enough that every other container relying on
-# /mnt/storage stops responding, and closing the tray again is what actually
-# recovers it (not just a coincidental delay). 20s gives a visible "done"
-# signal and a brief window to grab the disc, then auto-closes so the system
-# self-heals instead of staying broken until someone notices and manually
-# closes it.
-sleep 20
-eject -t "$DRIVE" 2>>"$LOG_FILE" \
-	|| log "Tray auto-close failed (non-fatal) - close it manually if containers seem down"
+# No auto-eject. The optical drive and /mnt/storage are both USB-attached on
+# this host, and ejecting destabilizes something shared between them badly
+# enough that every other container relying on /mnt/storage stops
+# responding - a delayed auto-close (`eject -t`) was tried as a mitigation
+# but the instability during that window was still an unacceptable tradeoff.
+# The disc is left in the drive; eject it manually when ready.
+log "Disc ripped and filed - eject manually when ready"
 
 log "=== auto-rip complete ==="
