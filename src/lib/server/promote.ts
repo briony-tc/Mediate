@@ -98,11 +98,13 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 		let completePath: string;
 
 		if (disc.mediaType === 'movie') {
-			// Largest file is the main feature; anything else (extras/trailers that
-			// passed MakeMKV's minlength filter) is deleted once the main feature
-			// is safely filed into Jellyfin, rather than left behind indefinitely -
-			// see removeIfEmpty below, which then cleans up the staging folder
-			// itself once it's actually empty.
+			// Largest file is the main feature. Anything else that reached
+			// staging already cleared the auto-rip script's own length filter
+			// (see scripts/auto-rip.sh - it skips anything under 10 minutes
+			// before ripping at all), so it's presumed worth keeping rather
+			// than junk - moved into Jellyfin's "behind the scenes" convention
+			// (a recognized extras subfolder name, auto-shown as Special
+			// Features on the movie's page) instead of being deleted.
 			const [largest, ...extras] = files
 				.map((name) => ({ name, size: statSync(join(stagingFolderAbsolutePath, name)).size }))
 				.sort((a, b) => b.size - a.size);
@@ -113,8 +115,16 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 			completePath = join(destDir, `${folderName}.mkv`);
 			moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
 
-			for (const extra of extras) {
-				unlinkSync(join(stagingFolderAbsolutePath, extra.name));
+			if (extras.length > 0) {
+				const extrasDir = join(destDir, 'behind the scenes');
+				mkdirSync(extrasDir, { recursive: true });
+				extras.forEach((extra, index) => {
+					const suffix = extras.length === 1 ? '' : ` ${index + 1}`;
+					moveFile(
+						join(stagingFolderAbsolutePath, extra.name),
+						join(extrasDir, `${folderName} - Behind the Scenes${suffix}.mkv`)
+					);
+				});
 			}
 		} else {
 			// A TV disc without a season can't be filed - auto-link already
