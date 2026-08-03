@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,16 +63,16 @@ describe('promoteToJellyfin - movies', () => {
 		expect(updated.completePath).toBe(dest);
 	});
 
-	it('moves only the largest file and leaves extras behind in staging', () => {
+	it('moves only the largest file, deletes the rest, and removes the now-empty staging folder', () => {
 		writeFileSync(join(stagingFolder, 'main.mkv'), 'x'.repeat(100));
 		writeFileSync(join(stagingFolder, 'extra.mkv'), 'x');
 		const disc = seedDisc({ title: 'Inception', mediaType: 'movie' });
 
-		promoteToJellyfin(disc, stagingFolder);
+		const result = promoteToJellyfin(disc, stagingFolder);
 
+		expect(result).toBe('promoted');
 		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception'))).toEqual(['Inception.mkv']);
-		// staging folder is left in place (not removed) since it isn't empty
-		expect(readdirSync(stagingFolder)).toEqual(['extra.mkv']);
+		expect(existsSync(stagingFolder)).toBe(false);
 	});
 
 	it('sanitizes filesystem-unsafe characters out of the title', () => {
@@ -82,6 +82,20 @@ describe('promoteToJellyfin - movies', () => {
 		promoteToJellyfin(disc, stagingFolder);
 
 		expect(readdirSync(join(jellyfinRoot, 'movies'))).toEqual(['Ocean The Sequel']);
+	});
+
+	it('includes the release year in the folder and file name when the disc has one', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
+		const disc = seedDisc({ title: 'Inception', mediaType: 'movie', year: 2010 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const dest = join(jellyfinRoot, 'movies', 'Inception (2010)', 'Inception (2010).mkv');
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception (2010)'))).toEqual([
+			'Inception (2010).mkv'
+		]);
+		expect(testDb.select().from(discs).all()[0].completePath).toBe(dest);
 	});
 });
 
