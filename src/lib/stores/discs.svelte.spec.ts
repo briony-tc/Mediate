@@ -16,6 +16,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 		genres: null,
 		barcodeUpc: null,
 		rawLookupTitle: null,
+		armedAt: null,
 		stagedPath: null,
 		completePath: null,
 		stagedAt: null,

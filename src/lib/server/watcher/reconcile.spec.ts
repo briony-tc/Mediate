@@ -154,6 +154,73 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 		onFileSeen('/staging/Inception/extras', ['Inception', 'extras'].join(sep), 'staging');
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
+
+	describe('armed disc fast path', () => {
+		it('links an armed disc unconditionally, even when the folder name does not fuzzy-match its title at all', () => {
+			const armed = seedDisc({
+				title: 'The Vicar of Dibley',
+				status: 'not_started',
+				armedAt: Date.now()
+			});
+			// A completely unrelated-looking MakeMKV volume label - would never
+			// fuzzy-match "The Vicar of Dibley" on its own.
+			const absolute = '/staging/DISC_4_SIDE_B';
+
+			onFileSeen(absolute, 'DISC_4_SIDE_B', 'staging');
+
+			const updated = testDb
+				.select()
+				.from(discs)
+				.all()
+				.find((d) => d.id === armed.id);
+			expect(updated?.status).toBe('ripping');
+			expect(updated?.stagedPath).toBe(absolute);
+			expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+		});
+
+		it('clears armedAt once the armed disc is linked', () => {
+			const armed = seedDisc({ status: 'not_started', armedAt: Date.now() });
+
+			onFileSeen('/staging/Anything', 'Anything', 'staging');
+
+			const updated = testDb
+				.select()
+				.from(discs)
+				.all()
+				.find((d) => d.id === armed.id);
+			expect(updated?.armedAt).toBeNull();
+		});
+
+		it('ignores an armed disc that is no longer not_started, falling back to fuzzy matching', () => {
+			// Defensive: arming is only ever allowed on a not_started disc via
+			// /api/arm, but the fast path should not trust a stale armedAt on a
+			// disc that has since moved on.
+			seedDisc({ title: 'Completely Different Show', status: 'ripping', armedAt: Date.now() });
+			const match = seedDisc({ title: 'Inception', status: 'not_started' });
+
+			onFileSeen('/staging/Inception', 'Inception', 'staging');
+
+			const updated = testDb
+				.select()
+				.from(discs)
+				.all()
+				.find((d) => d.id === match.id);
+			expect(updated?.status).toBe('ripping');
+		});
+
+		it("falls back to today's fuzzy matching when nothing is armed", () => {
+			const disc = seedDisc({ title: 'Inception', status: 'not_started' });
+
+			onFileSeen('/staging/Inception', 'Inception', 'staging');
+
+			const updated = testDb
+				.select()
+				.from(discs)
+				.all()
+				.find((d) => d.id === disc.id);
+			expect(updated?.status).toBe('ripping');
+		});
+	});
 });
 
 describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
