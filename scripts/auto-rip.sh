@@ -18,6 +18,16 @@ PROGRESS_WEBHOOK_URL="https://media-library-shelf.viki/api/rip-progress"
 WEBHOOK_SECRET_FILE="/opt/data/scripts/rip-webhook-secret"
 DRIVE="/dev/sr0"
 CONTAINER="makemkv"
+# This script runs as root (udev runs RUN+= scripts as root), so anything it
+# rips ends up root-owned - harmless for the app's own automated promotion
+# (which runs inside its own container, unaffected by host file ownership),
+# but blocks manual intervention over Samba whenever a rip doesn't get
+# auto-filed (confirmed live: macOS Finder refused to move a root-owned
+# staging folder - "you don't have permission to access some of the items" -
+# even though the files inside were world-readable/writable, because moving
+# requires write access to the *directory*, which was root-only). Chowned to
+# this user right after every successful rip below.
+STAGING_OWNER="adminbri:adminbri"
 # /opt/makemkv/bin isn't on the container's $PATH for `docker exec` sessions
 # (confirmed: exec fails with "executable file not found in $PATH" otherwise) -
 # must use the full path.
@@ -209,6 +219,12 @@ if [ "$RIP_STATUS" -ne 0 ]; then
 fi
 
 log "Rip finished: $LABEL"
+
+# Non-fatal like the eject call below - a failed chown shouldn't stop the
+# disc from being filed, it would just mean the same Samba permission issue
+# resurfaces if this particular rip ever needs manual attention later.
+chown -R "$STAGING_OWNER" "$DEST_HOST" 2>>"$LOG_FILE" \
+	|| log "Could not fix ownership on $DEST_HOST (non-fatal)"
 
 if curl -sf -X POST "$WEBHOOK_URL" \
 	-H "Authorization: Bearer $SECRET" \
