@@ -9,7 +9,6 @@
 		type SortKey,
 		type StatusFilter
 	} from '$lib/library';
-	import { estimateSecondsRemaining, formatRemaining } from '$lib/rip-eta';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -93,15 +92,8 @@
 		pushEnabled = true;
 	}
 
-	// Ticked every 30s so the "time remaining" estimate on ripping discs
-	// visibly creeps down between SSE percent updates instead of sitting
-	// frozen - a single shared interval rather than one per row.
-	let nowTick = $state(Date.now());
-	let tickInterval: ReturnType<typeof setInterval> | undefined;
-
 	onMount(() => {
 		disconnect = discStore.connect();
-		tickInterval = setInterval(() => (nowTick = Date.now()), 30_000);
 
 		if ('serviceWorker' in navigator && 'PushManager' in window) {
 			pushSupported = true;
@@ -115,17 +107,7 @@
 
 	onDestroy(() => {
 		disconnect?.();
-		clearInterval(tickInterval);
 	});
-
-	function ripRemainingLabel(disc: (typeof discStore.discs)[number]): string {
-		const percent = disc.ripProgressPercent;
-		if (percent === null) return 'Ripping…';
-		const remaining = estimateSecondsRemaining(disc.stagedAt ?? disc.updatedAt, percent, nowTick);
-		return remaining === null
-			? `${percent}% ripped`
-			: `${percent}% — ${formatRemaining(remaining)}`;
-	}
 
 	const statusLabel: Record<string, string> = {
 		not_started: 'Not started',
@@ -351,17 +333,19 @@
 							>
 								{statusLabel[disc.status]}
 							</span>
-							{#if disc.status === 'ripping'}
-								<div class="mt-1.5 max-w-[200px]">
-									<div
-										class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"
-									>
-										<div
-											class="h-full rounded-full bg-blue-600 dark:bg-blue-500"
-											style="width: {disc.ripProgressPercent ?? 0}%"
-										></div>
-									</div>
-									<p class="mt-1 text-xs text-gray-500">{ripRemainingLabel(disc)}</p>
+							{#if discStore.progressLog[disc.id]?.length}
+								<div
+									class="mt-1.5 max-w-xs space-y-0.5 rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1.5 dark:border-blue-900 dark:bg-blue-950/40"
+								>
+									{#each discStore.progressLog[disc.id] as line, i (i)}
+										<p
+											class="text-xs {i === discStore.progressLog[disc.id].length - 1
+												? 'font-medium text-blue-900 dark:text-blue-200'
+												: 'text-gray-500 dark:text-gray-400'}"
+										>
+											{line}
+										</p>
+									{/each}
 								</div>
 							{/if}
 						</div>

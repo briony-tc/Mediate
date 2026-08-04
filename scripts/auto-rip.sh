@@ -155,63 +155,36 @@ fi
 # stays a single invocation exactly as before, since it's already one keyword
 # MakeMKV itself understands.
 #
-# Each invocation runs in the background (rather than blocking) so the
-# progress reporter below can tail its robot-mode output while it runs.
-# Output goes to a temp file instead of straight to $LOG_FILE so it can be
-# parsed for PRGV: lines as they arrive; the temp file's full contents still
-# get appended into $LOG_FILE once each title finishes, preserving today's
-# everything-is-logged behavior. Wrapped in a generous outer timeout purely
-# as a safety net against a truly-hung invocation, not as an expected normal
-# duration - raised from 2h to 6h after a real 45-title Blu-ray rip
-# (Abduction, 2011) was still legitimately progressing past the 2h mark and
-# got killed by this timeout. Note that killing the `timeout`-wrapped docker
-# exec client does NOT reliably kill the process it started inside the
-# container (confirmed live: makemkvcon kept running and writing files for
-# a long time after this fired) - so a too-short timeout here doesn't even
-# stop the rip, it just orphans it from this script's ability to notice
-# completion and call the webhook.
+# Each invocation runs in the background (rather than blocking) so `wait` can
+# capture its exit status per title. Output goes to a temp file instead of
+# straight to $LOG_FILE, whose full contents get appended into $LOG_FILE once
+# each title finishes, preserving today's everything-is-logged behavior.
+# Wrapped in a generous outer timeout purely as a safety net against a truly-
+# hung invocation, not as an expected normal duration - raised from 2h to 6h
+# after a real 45-title Blu-ray rip (Abduction, 2011) was still legitimately
+# progressing past the 2h mark and got killed by this timeout. Note that
+# killing the `timeout`-wrapped docker exec client does NOT reliably kill the
+# process it started inside the container (confirmed live: makemkvcon kept
+# running and writing files for a long time after this fired) - so a
+# too-short timeout here doesn't even stop the rip, it just orphans it from
+# this script's ability to notice completion and call the webhook.
 #
 # `-t` allocates a pseudo-TTY for the exec session - confirmed necessary via
 # a live rip on VIKI: without it, makemkvcon's stdio is fully block-buffered
 # once it isn't attached to a real terminal, so the redirected output file
 # saw zero new bytes for 80+ minutes despite the rip actively progressing the
 # whole time. `isatty()` returning true via the pty is what keeps it flushing
-# incrementally so the tail below actually has something to read.
+# incrementally so the log still captures everything for troubleshooting.
 #
-# MakeMKV's robot-mode PRGV:current,total,max lines give overall job progress
-# for the *current* title via total/max (this is what the GUI's own progress
-# bar is driven by) - no explicit "time remaining" field exists,
-# media-library-shelf estimates that itself from percent + elapsed time.
-# Reported as an overall percent across every title being ripped for this
-# disc (not just the current one), so the app's progress bar reflects true
-# completion of the whole job, not just whichever title happens to be
-# running. Reports at most once per percentage point, roughly every 30s.
-# Best-effort only: a failed or missed report here must never abort the rip -
-# mirrors this script's existing philosophy of treating peripheral failures
-# (e.g. the ownership fix below) as non-fatal.
-report_progress() {
-	local rip_pid="$1" rip_output="$2" title_index="$3" total_titles="$4"
-	local last_sent=-1
-	while kill -0 "$rip_pid" 2>/dev/null; do
-		sleep 30
-		local line
-		line=$(grep -a '^PRGV:' "$rip_output" | tail -1)
-		[ -z "$line" ] && continue
-		local total max percent overall
-		IFS=',' read -r _ total max <<<"${line#PRGV:}"
-		[ -z "${max:-}" ] || [ "$max" -eq 0 ] && continue
-		percent=$((total * 100 / max))
-		[ "$percent" -eq "$last_sent" ] && continue
-		last_sent=$percent
-		overall=$(((title_index * 100 + percent) / total_titles))
-		curl -sf -X POST "$PROGRESS_WEBHOOK_URL" \
-			-H "Authorization: Bearer $SECRET" \
-			-H "Content-Type: application/json" \
-			-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\", \"percent\": $overall}" \
-			>>"$LOG_FILE" 2>&1 || true
-	done
-}
-
+# Progress reporting used to tail MakeMKV's own PRGV: lines for a live
+# in-title percent - dropped after confirming live that they never reach the
+# captured output during the actual save phase even with -t (the analysis
+# phase streams fine, the save phase doesn't - some internal buffering `-t`
+# doesn't reach). Reporting "title i+1 of N" at each loop boundary instead is
+# strictly more reliable: it's driven by this script's own loop counters, not
+# by anything MakeMKV chooses to print. Best-effort only, same as every other
+# peripheral call in this script (e.g. the ownership fix below) - a failed or
+# missed report must never abort the rip.
 IFS=',' read -ra TITLE_LIST <<<"$RIP_TARGET"
 TOTAL_TITLES=${#TITLE_LIST[@]}
 
@@ -220,17 +193,18 @@ for i in "${!TITLE_LIST[@]}"; do
 	TITLE_ID="${TITLE_LIST[$i]}"
 	log "Ripping title $TITLE_ID ($((i + 1))/$TOTAL_TITLES) into $DEST_HOST..."
 
+	curl -sf -X POST "$PROGRESS_WEBHOOK_URL" \
+		-H "Authorization: Bearer $SECRET" \
+		-H "Content-Type: application/json" \
+		-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\", \"titlesCompleted\": $i, \"titlesTotal\": $TOTAL_TITLES}" \
+		>>"$LOG_FILE" 2>&1 || true
+
 	RIP_OUTPUT=$(mktemp)
 	timeout 21600 docker exec -t "$CONTAINER" "$MAKEMKVCON" -r mkv disc:0 "$TITLE_ID" "$DEST_CONTAINER" >"$RIP_OUTPUT" 2>&1 &
 	RIP_PID=$!
 
-	report_progress "$RIP_PID" "$RIP_OUTPUT" "$i" "$TOTAL_TITLES" &
-	REPORT_PID=$!
-
 	TITLE_STATUS=0
 	wait "$RIP_PID" || TITLE_STATUS=$?
-	kill "$REPORT_PID" 2>/dev/null || true
-	wait "$REPORT_PID" 2>/dev/null || true
 	cat "$RIP_OUTPUT" >>"$LOG_FILE"
 	rm -f "$RIP_OUTPUT"
 
@@ -240,6 +214,14 @@ for i in "${!TITLE_LIST[@]}"; do
 		break
 	fi
 done
+
+if [ "$RIP_STATUS" -eq 0 ]; then
+	curl -sf -X POST "$PROGRESS_WEBHOOK_URL" \
+		-H "Authorization: Bearer $SECRET" \
+		-H "Content-Type: application/json" \
+		-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\", \"titlesCompleted\": $TOTAL_TITLES, \"titlesTotal\": $TOTAL_TITLES}" \
+		>>"$LOG_FILE" 2>&1 || true
+fi
 
 if [ "$RIP_STATUS" -ne 0 ]; then
 	log "makemkvcon exited non-zero (or timed out), aborting (no webhook call)"

@@ -26,10 +26,13 @@ export const discs = sqliteTable('discs', {
 	// unconditionally instead of fuzzy-matching by folder name. Cleared the
 	// moment it actually transitions to 'ripping'. Null the rest of the time.
 	armedAt: integer('armed_at'),
-	// Latest known percent-complete (0-100) reported by the auto-rip script
-	// while status is 'ripping', via /api/rip-progress. Null before the first
-	// report arrives, or once the disc leaves 'ripping'.
-	ripProgressPercent: integer('rip_progress_percent'),
+	// How many titles of the multi-title rip are done vs. total, reported by
+	// the auto-rip script at each loop boundary (not a live in-title percent -
+	// MakeMKV's own progress output isn't reliably readable, confirmed live -
+	// this is a coarser but fully reliable signal instead). Null before the
+	// first report arrives, or once the disc leaves 'ripping'.
+	ripTitlesCompleted: integer('rip_titles_completed'),
+	ripTitlesTotal: integer('rip_titles_total'),
 	stagedPath: text('staged_path'),
 	completePath: text('complete_path'),
 	stagedAt: integer('staged_at'),

@@ -127,11 +127,12 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
-	it('resets a leftover ripProgressPercent from a previous attempt when a disc starts ripping again', () => {
+	it('resets leftover title-progress counts from a previous attempt when a disc starts ripping again', () => {
 		const disc = seedDisc({
 			title: 'Inception',
 			status: 'not_started',
-			ripProgressPercent: 87
+			ripTitlesCompleted: 2,
+			ripTitlesTotal: 3
 		});
 
 		onFileSeen('/staging/Inception', 'Inception', 'staging');
@@ -142,7 +143,8 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 			.all()
 			.find((d) => d.id === disc.id);
 		expect(updated?.status).toBe('ripping');
-		expect(updated?.ripProgressPercent).toBeNull();
+		expect(updated?.ripTitlesCompleted).toBeNull();
+		expect(updated?.ripTitlesTotal).toBeNull();
 	});
 
 	it('matches a messy real-world MakeMKV disc-label folder name', () => {
