@@ -16,6 +16,15 @@ STAGING_DIR="/mnt/storage/media/staging"
 WEBHOOK_URL="https://media-library-shelf.viki/api/rip-complete"
 PROGRESS_WEBHOOK_URL="https://media-library-shelf.viki/api/rip-progress"
 WEBHOOK_SECRET_FILE="/opt/data/scripts/rip-webhook-secret"
+# Triggers a Jellyfin library scan for whichever library (movies/tvshows) a
+# rip actually landed in, once media-library-shelf confirms it filed the
+# disc - so new content shows up without waiting for Jellyfin's own scheduled
+# scan or a manual "Scan Library" click. Needs a Jellyfin API key the user
+# generates themselves (Dashboard > Administration > API Keys) and saves to
+# JELLYFIN_API_KEY_FILE - missing/unreadable just skips the refresh (logged,
+# non-fatal), since the rip itself has already fully succeeded by this point.
+JELLYFIN_URL="https://jellyfin.viki"
+JELLYFIN_API_KEY_FILE="/opt/data/scripts/jellyfin-api-key"
 DRIVE="/dev/sr0"
 CONTAINER="makemkv"
 # This script runs as root (udev runs RUN+= scripts as root), so anything it
@@ -236,14 +245,68 @@ log "Rip finished: $LABEL"
 chown -R "$STAGING_OWNER" "$DEST_HOST" 2>>"$LOG_FILE" \
 	|| log "Could not fix ownership on $DEST_HOST (non-fatal)"
 
-if curl -sf -X POST "$WEBHOOK_URL" \
+# Captured (rather than piped straight to $LOG_FILE, as before) so the
+# outcome/mediaType it returns can drive the Jellyfin library refresh below -
+# still logged in full either way. WEBHOOK_STATUS is set via the `||`
+# fallback (not a bare assignment) deliberately - under `set -e`, a plain
+# `VAR=$(cmd)` whose cmd fails aborts the whole script right there (confirmed
+# live), the same way a bare failing command would; this is the same guard
+# pattern already used for `wait "$RIP_PID"` above.
+WEBHOOK_STATUS=0
+WEBHOOK_RESPONSE=$(curl -sf -X POST "$WEBHOOK_URL" \
 	-H "Authorization: Bearer $SECRET" \
 	-H "Content-Type: application/json" \
-	-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\"}" \
-	>>"$LOG_FILE" 2>&1; then
+	-d "{\"stagingFolderName\": \"$ESCAPED_FOLDER\"}" 2>>"$LOG_FILE") || WEBHOOK_STATUS=$?
+echo "$WEBHOOK_RESPONSE" >>"$LOG_FILE"
+
+if [ "$WEBHOOK_STATUS" -eq 0 ]; then
 	log "Webhook call succeeded"
 else
 	log "Webhook call failed - disc is ripped but not yet filed/notified, check manually"
+fi
+
+# Only refresh Jellyfin when the disc was actually filed ('promoted') - the
+# other outcomes (needs_attention/needs_review) mean nothing new landed in
+# Jellyfin's folders yet, so there's nothing for a scan to pick up. Looks the
+# library up by CollectionType via /Library/VirtualFolders rather than
+# hardcoding an id, so this keeps working if the user ever recreates/renames
+# their Jellyfin libraries. Every step here is non-fatal - the rip itself has
+# already fully succeeded by this point regardless of what happens next.
+OUTCOME=$(echo "$WEBHOOK_RESPONSE" | jq -r '.outcome // empty')
+MEDIA_TYPE=$(echo "$WEBHOOK_RESPONSE" | jq -r '.mediaType // empty')
+
+if [ "$OUTCOME" = "promoted" ] && [ -n "$MEDIA_TYPE" ]; then
+	COLLECTION_TYPE="movies"
+	[ "$MEDIA_TYPE" = "tv" ] && COLLECTION_TYPE="tvshows"
+
+	JELLYFIN_API_KEY=$(cat "$JELLYFIN_API_KEY_FILE" 2>/dev/null) || true
+	if [ -n "$JELLYFIN_API_KEY" ]; then
+		# `|| true` guards against two things under `set -euo pipefail`: a
+		# failed curl (e.g. bad/missing API key) would otherwise abort the
+		# whole script right here rather than falling through to the "could
+		# not find library id" log line below (confirmed live - a bare
+		# `VAR=$(cmd)` assignment is NOT exempt from `set -e` the way an
+		# `if cmd; then` is); and `| head -1` closing the pipe early can make
+		# pipefail report the upstream curl/jq as "failed" via SIGPIPE even
+		# when they produced the right output first.
+		LIBRARY_ID=$(curl -sf "$JELLYFIN_URL/Library/VirtualFolders" \
+			-H "X-Emby-Token: $JELLYFIN_API_KEY" 2>>"$LOG_FILE" \
+			| jq -r --arg t "$COLLECTION_TYPE" '.[] | select(.CollectionType == $t) | .ItemId' \
+			| head -1) || true
+
+		if [ -n "$LIBRARY_ID" ]; then
+			curl -sf -X POST \
+				"$JELLYFIN_URL/Items/$LIBRARY_ID/Refresh?Recursive=true&ImageRefreshMode=Default&MetadataRefreshMode=Default" \
+				-H "X-Emby-Token: $JELLYFIN_API_KEY" \
+				>>"$LOG_FILE" 2>&1 \
+				&& log "Triggered Jellyfin $COLLECTION_TYPE library refresh" \
+				|| log "Jellyfin library refresh failed (non-fatal)"
+		else
+			log "Could not find Jellyfin $COLLECTION_TYPE library id (non-fatal, skipping refresh)"
+		fi
+	else
+		log "No Jellyfin API key at $JELLYFIN_API_KEY_FILE - skipping library refresh"
+	fi
 fi
 
 # No auto-eject. The optical drive and /mnt/storage are both USB-attached on

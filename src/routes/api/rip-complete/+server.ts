@@ -46,7 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const result = promoteToJellyfin(disc, absolutePath);
 		if (result === 'promoted') {
 			await notifyAll('Rip complete', `${disc.title} filed into Jellyfin.`);
-			return json({ outcome: 'promoted', discId: disc.id });
+			return json({ outcome: 'promoted', discId: disc.id, mediaType: disc.mediaType });
 		}
 		await notifyAll(
 			'Rip complete',
