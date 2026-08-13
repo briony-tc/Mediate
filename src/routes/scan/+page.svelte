@@ -23,6 +23,13 @@
 	// empty), not a string - don't treat this like a text input's value.
 	let seasonInput = $state<number | undefined>(undefined);
 
+	// Set when /api/confirm 409s on a title/season that's already tracked -
+	// offers the option to add this as another disc of that same title
+	// (e.g. a 2-disc DVD, or a season split across discs) instead of just
+	// treating it as a duplicate.
+	let discConflict = $state<{ candidate: Candidate; season: number | null } | null>(null);
+	let discNumberInput = $state<number | undefined>(2);
+
 	// Tracks every successful add from the *current* result list, so a single
 	// search (e.g. "Toy Story") can add several matching discs one at a time
 	// without the list disappearing after the first - it only clears when a
@@ -57,6 +64,8 @@
 		manualQuery = '';
 		pendingCandidate = null;
 		seasonInput = undefined;
+		discConflict = null;
+		discNumberInput = 2;
 		previewUrls = {};
 		previewLoading = {};
 		addedEntries = [];
@@ -176,20 +185,32 @@
 		focusSignal += 1;
 	}
 
-	async function confirmCandidate(candidate: Candidate, season: number | null) {
+	async function confirmCandidate(
+		candidate: Candidate,
+		season: number | null,
+		discNumber: number | null = null
+	) {
 		status = 'loading';
 
 		const { response, data } = await postJson('/api/confirm', {
 			watchmodeId: candidate.id,
 			barcode: currentBarcode,
 			rawLookupTitle,
-			season
+			season,
+			discNumber
 		});
 
 		if (response.status === 409) {
-			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
 			status = 'idle';
-			addedEntries = [...addedEntries, { id: candidate.id, season }];
+			if (discNumber !== null) {
+				// Already tried to add this exact disc number - nothing more to offer.
+				message = `Disc ${discNumber} of "${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
+				discConflict = null;
+				return;
+			}
+			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
+			discConflict = { candidate, season };
+			discNumberInput = 2;
 			clearPendingAdd();
 			return;
 		}
@@ -200,10 +221,21 @@
 			return;
 		}
 
-		message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''} as Not started.`;
+		const discLabel = data.disc.discNumber ? ` (disc ${data.disc.discNumber})` : '';
+		message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''}${discLabel} as Not started.`;
 		status = 'idle';
 		addedEntries = [...addedEntries, { id: candidate.id, season }];
+		discConflict = null;
 		clearPendingAdd();
+	}
+
+	function confirmAdditionalDisc() {
+		if (!discConflict) return;
+		confirmCandidate(discConflict.candidate, discConflict.season, discNumberInput ?? 2);
+	}
+
+	function dismissDiscConflict() {
+		discConflict = null;
 	}
 </script>
 
@@ -257,6 +289,31 @@
 				</button>
 			</div>
 		</div>
+	{:else if discConflict}
+		<div class="space-y-2 rounded-md border p-3">
+			<p class="text-sm">
+				Is this another disc of the same title? <span class="font-medium"
+					>{discConflict.candidate.name}</span
+				>
+			</p>
+			<div class="flex gap-2">
+				<input
+					type="number"
+					min="2"
+					bind:value={discNumberInput}
+					placeholder="Disc number"
+					class="w-32 rounded-md border p-2"
+				/>
+				<button
+					class="rounded-md border px-4 py-2"
+					onclick={confirmAdditionalDisc}
+					disabled={status === 'loading' || !discNumberInput}
+				>
+					Add
+				</button>
+				<button class="rounded-md border px-4 py-2" onclick={dismissDiscConflict}> Dismiss </button>
+			</div>
+		</div>
 	{:else if candidates.length > 0}
 		<ul class="space-y-2">
 			{#each candidates as candidate (candidate.id)}
@@ -295,13 +352,14 @@
 						{/if}
 						{#if isTv(candidate) && addedSeasonsFor(candidate.id).length > 0}
 							<span class="text-gray-500">
-								Added: season{addedSeasonsFor(candidate.id).length > 1 ? 's' : ''} {addedSeasonsFor(
-									candidate.id
-								).join(', ')}
+								Added: season{addedSeasonsFor(candidate.id).length > 1 ? 's' : ''}
+								{addedSeasonsFor(candidate.id).join(', ')}
 							</span>
 						{/if}
 						{#if !isTv(candidate) && isAdded(candidate.id, null)}
-							<span class="ml-auto rounded-md border px-3 py-1 font-medium text-gray-500"> Added ✓ </span>
+							<span class="ml-auto rounded-md border px-3 py-1 font-medium text-gray-500">
+								Added ✓
+							</span>
 						{:else}
 							<button
 								class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"

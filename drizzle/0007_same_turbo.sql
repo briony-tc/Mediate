@@ -1,0 +1,1 @@
+ALTER TABLE `discs` ADD `disc_number` integer;

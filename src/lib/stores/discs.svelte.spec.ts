@@ -9,6 +9,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 		title: 'Inception',
 		mediaType: 'movie',
 		season: null,
+		discNumber: null,
 		year: 2010,
 		watchmodeId: 1,
 		imdbId: null,

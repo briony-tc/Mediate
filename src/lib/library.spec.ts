@@ -16,6 +16,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 		title: 'Inception',
 		mediaType: 'movie',
 		season: null,
+		discNumber: null,
 		year: 2010,
 		watchmodeId: 1,
 		imdbId: null,
@@ -101,6 +102,19 @@ describe('sortDiscs', () => {
 		const copy = discs.slice();
 		sortDiscs(discs, 'title');
 		expect(discs).toEqual(copy);
+	});
+
+	it('keeps discs of the same title/season adjacent, ordered by disc number, wherever the group falls', () => {
+		const multiDisc = [
+			makeDisc({ id: 10, title: 'Zeta', watchmodeId: 99, discNumber: 2, updatedAt: 5 }),
+			makeDisc({ id: 11, title: 'Alpha', watchmodeId: 1, updatedAt: 1 }),
+			makeDisc({ id: 12, title: 'Zeta', watchmodeId: 99, discNumber: 1, updatedAt: 40 })
+		];
+
+		// Sorted by title, "Zeta" (id 12, the earlier-encountered disc-1 group
+		// member) anchors the group's position - disc 2 (id 10) follows right
+		// after it despite its own title-sort position being identical.
+		expect(sortDiscs(multiDisc, 'title').map((d) => d.id)).toEqual([11, 12, 10]);
 	});
 });
 

@@ -14,6 +14,12 @@ export const discs = sqliteTable('discs', {
 	// (the series), so watchmodeId alone can't be unique - (watchmodeId,
 	// season) identifies a row; null season means "movie" or "whole series".
 	season: integer('season'),
+	// Set when this disc is one of several covering the same (watchmodeId,
+	// season) - e.g. a film split across 2 DVDs, or a TV season sold across
+	// multiple discs. Null means "single disc" (the default, and still the
+	// overwhelming majority of titles) - promoteToJellyfin branches on this to
+	// avoid discs of the same title overwriting each other on file.
+	discNumber: integer('disc_number'),
 	year: integer('year'),
 	watchmodeId: integer('watchmode_id').notNull(),
 	imdbId: text('imdb_id'),

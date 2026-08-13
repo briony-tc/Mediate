@@ -6,6 +6,7 @@ export type Disc = {
 	title: string;
 	mediaType: 'movie' | 'tv';
 	season: number | null;
+	discNumber: number | null;
 	year: number | null;
 	watchmodeId: number;
 	imdbId: string | null;

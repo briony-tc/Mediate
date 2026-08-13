@@ -37,6 +37,26 @@ function episodeFileName(title: string, season: number, episode: number): string
 	return `${title} - S${s}E${e}.mkv`;
 }
 
+/** Highest episode number already filed for this season, or 0 if none/folder is new. */
+function highestExistingEpisode(destDir: string, season: number): number {
+	let names: string[];
+	try {
+		names = readdirSync(destDir);
+	} catch {
+		return 0;
+	}
+
+	const seasonTag = `S${String(season).padStart(2, '0')}E`;
+	let max = 0;
+	for (const name of names) {
+		const idx = name.indexOf(seasonTag);
+		if (idx === -1) continue;
+		const match = name.slice(idx + seasonTag.length).match(/^(\d+)/);
+		if (match) max = Math.max(max, Number(match[1]));
+	}
+	return max;
+}
+
 /**
  * STAGING_PATH and JELLYFIN_PATH are expected to be on the same underlying
  * filesystem (confirmed on VIKI: both are subfolders of /mnt/storage/media),
@@ -112,17 +132,28 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 			const folderName = movieFolderName(disc);
 			const destDir = join(serverEnv.JELLYFIN_PATH, 'movies', folderName);
 			mkdirSync(destDir, { recursive: true });
-			completePath = join(destDir, `${folderName}.mkv`);
+			// disc.discNumber set: this is one part of a film split across
+			// multiple discs, not a standalone movie - use Jellyfin's documented
+			// multi-part naming (<bare title, no year>-cd<N>.ext) so Jellyfin
+			// stacks the parts into one entry instead of the fixed single
+			// filename, which would let disc 2 overwrite disc 1.
+			const featureFileName =
+				disc.discNumber !== null ? `${safeTitle}-cd${disc.discNumber}.mkv` : `${folderName}.mkv`;
+			completePath = join(destDir, featureFileName);
 			moveFile(join(stagingFolderAbsolutePath, largest.name), completePath);
 
 			if (extras.length > 0) {
 				const extrasDir = join(destDir, 'behind the scenes');
 				mkdirSync(extrasDir, { recursive: true });
+				// Disc-number tag avoids a later disc's extras overwriting an
+				// earlier disc's, since both would otherwise reuse the same
+				// index-based suffix independently per promote() call.
+				const discTag = disc.discNumber !== null ? ` (Disc ${disc.discNumber})` : '';
 				extras.forEach((extra, index) => {
 					const suffix = extras.length === 1 ? '' : ` ${index + 1}`;
 					moveFile(
 						join(stagingFolderAbsolutePath, extra.name),
-						join(extrasDir, `${folderName} - Behind the Scenes${suffix}.mkv`)
+						join(extrasDir, `${folderName} - Behind the Scenes${discTag}${suffix}.mkv`)
 					);
 				});
 			}
@@ -135,13 +166,17 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 
 			const destDir = join(serverEnv.JELLYFIN_PATH, 'tv', safeTitle, `Season ${season}`);
 			mkdirSync(destDir, { recursive: true });
-			// Numbered in disc/track order starting at E01. Known limitation: a
-			// season split across multiple discs restarts at E01 for each disc,
-			// since nothing in the schema tracks a starting episode offset.
+			// Numbered in disc/track order, continuing from whatever episode
+			// numbers already exist in this season's folder - so a season split
+			// across multiple discs keeps counting up instead of restarting at
+			// E01 each time. Relies on discs being ripped in disc order (the UI
+			// warns before arming a later disc while an earlier one isn't
+			// complete yet) - this only looks at what's on disk, not discNumber.
+			const startingEpisode = highestExistingEpisode(destDir, season) + 1;
 			files.forEach((name, index) => {
 				moveFile(
 					join(stagingFolderAbsolutePath, name),
-					join(destDir, episodeFileName(safeTitle, season, index + 1))
+					join(destDir, episodeFileName(safeTitle, season, startingEpisode + index))
 				);
 			});
 			completePath = destDir;

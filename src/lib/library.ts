@@ -24,6 +24,35 @@ export function filterDiscs(
 	});
 }
 
+function discGroupKey(disc: Disc): string {
+	return `${disc.watchmodeId}:${disc.season ?? ''}`;
+}
+
+/**
+ * Keeps discs of the same multi-disc title/season (same watchmodeId+season)
+ * adjacent and in disc-number order, without disturbing the relative order
+ * the sort above already established between different titles/groups. A
+ * no-op for every single-disc title, which is still the overwhelming
+ * majority - those groups are always length 1.
+ */
+function groupMultiDiscTitles(discs: Disc[]): Disc[] {
+	const groups = new Map<string, Disc[]>();
+	const order: string[] = [];
+	for (const disc of discs) {
+		const key = discGroupKey(disc);
+		if (!groups.has(key)) {
+			groups.set(key, []);
+			order.push(key);
+		}
+		groups.get(key)!.push(disc);
+	}
+	return order.flatMap((key) => {
+		const group = groups.get(key)!;
+		if (group.length < 2) return group;
+		return group.slice().sort((a, b) => (a.discNumber ?? 0) - (b.discNumber ?? 0));
+	});
+}
+
 export function sortDiscs(discs: Disc[], sortKey: SortKey): Disc[] {
 	const sorted = discs.slice();
 	switch (sortKey) {
@@ -42,7 +71,7 @@ export function sortDiscs(discs: Disc[], sortKey: SortKey): Disc[] {
 			sorted.sort((a, b) => b.updatedAt - a.updatedAt);
 			break;
 	}
-	return sorted;
+	return groupMultiDiscTitles(sorted);
 }
 
 export type StatusCounts = Record<DiscStatus, number> & { total: number };

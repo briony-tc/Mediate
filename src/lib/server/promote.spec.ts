@@ -116,6 +116,56 @@ describe('promoteToJellyfin - movies', () => {
 		]);
 		expect(testDb.select().from(discs).all()[0].completePath).toBe(dest);
 	});
+
+	it('uses Jellyfin multi-part naming (bare title, no year) when the disc has a discNumber', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
+		const disc = seedDisc({ title: 'Inception', mediaType: 'movie', year: 2010, discNumber: 2 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const dest = join(jellyfinRoot, 'movies', 'Inception (2010)', 'Inception-cd2.mkv');
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception (2010)'))).toEqual([
+			'Inception-cd2.mkv'
+		]);
+		expect(testDb.select().from(discs).all()[0].completePath).toBe(dest);
+	});
+
+	it('does not let a second disc of the same movie overwrite the first', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'part one');
+		const disc1 = seedDisc({ title: 'Inception', mediaType: 'movie', discNumber: 1 });
+		promoteToJellyfin(disc1, stagingFolder);
+
+		mkdirSync(stagingFolder, { recursive: true });
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'part two');
+		const disc2 = seedDisc({ title: 'Inception', mediaType: 'movie', discNumber: 2 });
+		promoteToJellyfin(disc2, stagingFolder);
+
+		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception')).sort()).toEqual([
+			'Inception-cd1.mkv',
+			'Inception-cd2.mkv'
+		]);
+	});
+
+	it("tags extras with the disc number so a later disc does not overwrite an earlier disc's extras", () => {
+		writeFileSync(join(stagingFolder, 'main.mkv'), 'x'.repeat(100));
+		writeFileSync(join(stagingFolder, 'extra.mkv'), 'x');
+		const disc1 = seedDisc({ title: 'Inception', mediaType: 'movie', discNumber: 1 });
+		promoteToJellyfin(disc1, stagingFolder);
+
+		mkdirSync(stagingFolder, { recursive: true });
+		writeFileSync(join(stagingFolder, 'main.mkv'), 'x'.repeat(100));
+		writeFileSync(join(stagingFolder, 'extra.mkv'), 'x');
+		const disc2 = seedDisc({ title: 'Inception', mediaType: 'movie', discNumber: 2 });
+		promoteToJellyfin(disc2, stagingFolder);
+
+		expect(
+			readdirSync(join(jellyfinRoot, 'movies', 'Inception', 'behind the scenes')).sort()
+		).toEqual([
+			'Inception - Behind the Scenes (Disc 1).mkv',
+			'Inception - Behind the Scenes (Disc 2).mkv'
+		]);
+	});
 });
 
 describe('promoteToJellyfin - tv', () => {
@@ -136,6 +186,26 @@ describe('promoteToJellyfin - tv', () => {
 		const updated = testDb.select().from(discs).all()[0];
 		expect(updated.status).toBe('complete');
 		expect(updated.completePath).toBe(seasonDir);
+	});
+
+	it('continues episode numbering from what is already filed instead of restarting at E01', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
+		writeFileSync(join(stagingFolder, 'title_t01.mkv'), 'x');
+		const disc1 = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1, discNumber: 1 });
+		promoteToJellyfin(disc1, stagingFolder);
+
+		mkdirSync(stagingFolder, { recursive: true });
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x');
+		const disc2 = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1, discNumber: 2 });
+		const result = promoteToJellyfin(disc2, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const seasonDir = join(jellyfinRoot, 'tv', 'Breaking Bad', 'Season 1');
+		expect(readdirSync(seasonDir).sort()).toEqual([
+			'Breaking Bad - S01E01.mkv',
+			'Breaking Bad - S01E02.mkv',
+			'Breaking Bad - S01E03.mkv'
+		]);
 	});
 
 	it('flags for manual review (status -> staged) when the disc has no season', () => {

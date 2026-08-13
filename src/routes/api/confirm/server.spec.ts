@@ -116,6 +116,42 @@ describe('POST /api/confirm', () => {
 		expect(testDb.select().from(discs).all()).toHaveLength(1);
 	});
 
+	it('allows adding a second disc of the same movie via an explicit discNumber, back-filling the first as disc 1', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+		const data = await response.json();
+
+		expect(response.status).toBe(201);
+		expect(data.disc.discNumber).toBe(2);
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows).toHaveLength(2);
+		expect(rows.map((r) => r.discNumber).sort()).toEqual([1, 2]);
+	});
+
+	it('still returns 409 for a plain re-scan (no discNumber) even after a multi-disc set exists', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()).toHaveLength(2);
+	});
+
 	it('ignores a season value sent for a movie', async () => {
 		getTitleDetails.mockResolvedValue({
 			id: 1,
