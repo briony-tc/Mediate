@@ -392,6 +392,29 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 		expect(rows.find((d) => d.id === season1.id)?.status).toBe('not_started');
 	});
 
+	it('does not auto-link a season folder when two discs of the same title/season differ only by discNumber', () => {
+		const disc1 = seedDisc({
+			title: 'The Vicar of Dibley',
+			mediaType: 'tv',
+			season: 2,
+			discNumber: 1
+		});
+		const disc2 = seedDisc({
+			title: 'The Vicar of Dibley',
+			mediaType: 'tv',
+			season: 2,
+			discNumber: 2
+		});
+		const absolute = '/jellyfin/tv/The Vicar of Dibley/Season 2';
+
+		onFileSeen(absolute, ['tv', 'The Vicar of Dibley', 'Season 2'].join(sep), 'jellyfin');
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === disc1.id)?.status).toBe('not_started');
+		expect(rows.find((d) => d.id === disc2.id)?.status).toBe('not_started');
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
 	it('ignores a bare tv show folder with no season info', () => {
 		seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
 
