@@ -186,6 +186,20 @@
 		discStore.discs = discStore.discs.map((d) => (d.id === discId ? { ...d, armedAt: null } : d));
 	}
 
+	// Undoes a bad /api/link match (e.g. an extras subfolder linked instead of
+	// the movie's own folder) - resets the disc to not_started so the correct
+	// unmatched file can be linked instead.
+	async function unlinkDisc(discId: number) {
+		const response = await fetch('/api/unlink', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId })
+		});
+		if (!response.ok) return;
+		const data = await response.json();
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? data.disc : d));
+	}
+
 	async function ignore(unmatchedFileId: number) {
 		const response = await fetch('/api/ignore', {
 			method: 'POST',
@@ -404,6 +418,15 @@
 											Start ripping
 										</button>
 									{/if}
+								{/if}
+								{#if disc.status === 'staged' || disc.status === 'complete'}
+									<button
+										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+										onclick={() => unlinkDisc(disc.id)}
+										title="Undo a bad match (e.g. linked the wrong folder) and start over"
+									>
+										Unlink
+									</button>
 								{/if}
 								<button
 									class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:hover:bg-gray-800"
