@@ -45,6 +45,17 @@
 
 	let disconnect: (() => void) | undefined;
 	let ignoredDialog: HTMLDialogElement | undefined;
+	let unlinkDialog: HTMLDialogElement | undefined;
+	let unlinkQuery = $state('');
+
+	// Only staged/complete discs actually have anything to unlink - see
+	// /api/unlink's own guard for why not_started/ripping are excluded.
+	let unlinkableDiscs = $derived(
+		discStore.discs.filter((d) => d.status === 'staged' || d.status === 'complete')
+	);
+	let unlinkResults = $derived(
+		unlinkableDiscs.filter((d) => d.title.toLowerCase().includes(unlinkQuery.trim().toLowerCase()))
+	);
 
 	let ignored = $state<typeof data.ignoredFiles>([]);
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
@@ -180,14 +191,24 @@
 
 	<LibraryStats discs={discStore.discs} />
 
-	{#if ignored.length > 0}
-		<button
-			class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-			onclick={() => ignoredDialog?.showModal()}
-		>
-			Ignored files ({ignored.length})
-		</button>
-	{/if}
+	<div class="flex flex-wrap gap-2">
+		{#if ignored.length > 0}
+			<button
+				class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+				onclick={() => ignoredDialog?.showModal()}
+			>
+				Ignored files ({ignored.length})
+			</button>
+		{/if}
+		{#if unlinkableDiscs.length > 0}
+			<button
+				class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+				onclick={() => unlinkDialog?.showModal()}
+			>
+				Unlink a title ({unlinkableDiscs.length})
+			</button>
+		{/if}
+	</div>
 
 	<dialog
 		bind:this={ignoredDialog}
@@ -264,6 +285,63 @@
 							Delete
 						</button>
 					{/if}
+				</li>
+			{/each}
+		</ul>
+	</dialog>
+
+	<dialog
+		bind:this={unlinkDialog}
+		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+	>
+		<div class="flex items-center justify-between">
+			<h2 class="text-lg font-medium">Unlink a title</h2>
+			<button
+				class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+				onclick={() => {
+					unlinkDialog?.close();
+					unlinkQuery = '';
+				}}
+				aria-label="Close"
+			>
+				✕
+			</button>
+		</div>
+		<p class="mt-2 text-sm text-gray-500">
+			Undoes a bad match (e.g. an extras subfolder linked instead of the movie's own folder) -
+			resets the title to Not started and puts the wrongly-linked file back under Rip Queue's "Needs
+			attention" so you can link the right one instead.
+		</p>
+		<input
+			type="text"
+			bind:value={unlinkQuery}
+			placeholder="Search titles…"
+			class="mt-3 w-full rounded-md border p-2 text-sm"
+			onfocus={(e) => e.currentTarget.select()}
+		/>
+		{#if unlinkResults.length === 0}
+			<p class="mt-3 text-sm text-gray-500">No matching titles.</p>
+		{/if}
+		<ul class="mt-3 space-y-2">
+			{#each unlinkResults as disc (disc.id)}
+				<li class="flex items-center justify-between rounded-md border p-3">
+					<div>
+						<p class="font-medium">
+							{disc.title}
+							{#if disc.season}<span class="text-gray-500">— Season {disc.season}</span>{/if}
+							{#if disc.year}<span class="text-gray-500">({disc.year})</span>{/if}
+						</p>
+						<span
+							class="mt-1 inline-block rounded-full px-3 py-1 text-xs font-medium {statusClass[
+								disc.status
+							]}"
+						>
+							{statusLabel[disc.status]}
+						</span>
+					</div>
+					<button class="rounded-md border px-3 py-1 text-sm" onclick={() => unlinkDisc(disc.id)}>
+						Unlink
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -367,15 +445,6 @@
 									<option value="wanted">Wanted</option>
 									<option value="digital_only">Digital only</option>
 								</select>
-								{#if disc.status === 'staged' || disc.status === 'complete'}
-									<button
-										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
-										onclick={() => unlinkDisc(disc.id)}
-										title="Undo a bad match (e.g. linked the wrong folder) and start over"
-									>
-										Unlink
-									</button>
-								{/if}
 								<button
 									class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:hover:bg-gray-800"
 									onclick={() => (pendingRemoveId = disc.id)}
