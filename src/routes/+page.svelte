@@ -153,9 +153,10 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ unmatchedFileId, discId })
 		});
-		if (response.ok) {
-			unmatched = unmatched.filter((u) => u.id !== unmatchedFileId);
-		}
+		if (!response.ok) return;
+		const data = await response.json();
+		unmatched = unmatched.filter((u) => u.id !== unmatchedFileId);
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? data.disc : d));
 	}
 
 	// Arming is a same-tab user action, not an async filesystem event, so - like

@@ -101,9 +101,10 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ unmatchedFileId, discId })
 		});
-		if (response.ok) {
-			ignored = ignored.filter((u) => u.id !== unmatchedFileId);
-		}
+		if (!response.ok) return;
+		const data = await response.json();
+		ignored = ignored.filter((u) => u.id !== unmatchedFileId);
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? data.disc : d));
 	}
 
 	async function restoreIgnored(unmatchedFileId: number) {
@@ -115,6 +116,22 @@
 		if (response.ok) {
 			ignored = ignored.filter((u) => u.id !== unmatchedFileId);
 		}
+	}
+
+	// Inline confirm step rather than a native confirm() dialog - same pattern
+	// as pendingRemoveId below, just scoped to the ignored-files list.
+	let pendingDeleteId = $state<number | null>(null);
+
+	async function deleteIgnored(unmatchedFileId: number) {
+		const response = await fetch('/api/unmatched-remove', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ unmatchedFileId })
+		});
+		if (response.ok) {
+			ignored = ignored.filter((u) => u.id !== unmatchedFileId);
+		}
+		pendingDeleteId = null;
 	}
 
 	async function setOwnership(discId: number, ownership: Ownership) {
@@ -160,7 +177,7 @@
 
 	<dialog
 		bind:this={ignoredDialog}
-		class="w-full max-w-lg rounded-md border bg-white p-4 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
 	>
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-medium">Ignored files ({ignored.length})</h2>
@@ -174,10 +191,10 @@
 		</div>
 		<p class="mt-2 text-sm text-gray-500">
 			Files the watcher couldn't match that were dismissed - e.g. a digital-only copy ignored before
-			its title was added here. Link one to a title below, or restore it so it shows up again under
-			Rip Queue's "Needs attention".
+			its title was added here. Link one to a title below, restore it so it shows up again under Rip
+			Queue's "Needs attention", or delete it permanently.
 		</p>
-		<ul class="mt-3 max-h-96 space-y-2 overflow-y-auto">
+		<ul class="mt-4 space-y-2">
 			{#each ignored as file (file.id)}
 				<li class="rounded-md border p-3">
 					<p class="truncate text-sm">{file.path}</p>
@@ -206,12 +223,33 @@
 							</button>
 						</div>
 					{/if}
-					<button
-						class="mt-2 ml-2 rounded-md border px-3 py-1 text-sm"
-						onclick={() => restoreIgnored(file.id)}
-					>
-						Restore
-					</button>
+					{#if pendingDeleteId === file.id}
+						<div class="mt-2 flex items-center gap-2 text-sm">
+							<span class="text-gray-500">Delete permanently?</span>
+							<button
+								class="rounded-md border border-red-600 px-2 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+								onclick={() => deleteIgnored(file.id)}
+							>
+								Confirm
+							</button>
+							<button class="rounded-md border px-2 py-1" onclick={() => (pendingDeleteId = null)}>
+								Cancel
+							</button>
+						</div>
+					{:else}
+						<button
+							class="mt-2 rounded-md border px-3 py-1 text-sm"
+							onclick={() => restoreIgnored(file.id)}
+						>
+							Restore
+						</button>
+						<button
+							class="mt-2 ml-2 rounded-md border border-red-600 px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+							onclick={() => (pendingDeleteId = file.id)}
+						>
+							Delete
+						</button>
+					{/if}
 				</li>
 			{/each}
 		</ul>
