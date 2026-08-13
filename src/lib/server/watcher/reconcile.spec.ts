@@ -127,6 +127,19 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
+	it("flips a 'wanted' wishlist disc to 'owned' the moment it actually starts ripping", () => {
+		const disc = seedDisc({ title: 'Inception', status: 'not_started', ownership: 'wanted' });
+
+		onFileSeen('/staging/Inception', 'Inception', 'staging');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.ownership).toBe('owned');
+	});
+
 	it('resets leftover title-progress counts from a previous attempt when a disc starts ripping again', () => {
 		const disc = seedDisc({
 			title: 'Inception',

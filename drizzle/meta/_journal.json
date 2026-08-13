@@ -57,6 +57,13 @@
       "when": 1786609592400,
       "tag": "0007_same_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786621939161,
+      "tag": "0008_black_iron_monger",
+      "breakpoints": true
     }
   ]
 }

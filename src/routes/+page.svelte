@@ -6,10 +6,12 @@
 		filterDiscs,
 		sortDiscs,
 		type MediaTypeFilter,
+		type OwnershipFilter,
 		type SortKey,
 		type StatusFilter
 	} from '$lib/library';
 	import type { PageData } from './$types';
+	import type { Ownership } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -23,6 +25,7 @@
 	let sortKey = $state<SortKey>('title');
 	let statusFilter = $state<StatusFilter>('all');
 	let mediaTypeFilter = $state<MediaTypeFilter>('all');
+	let ownershipFilter = $state<OwnershipFilter>('all');
 	let searchQuery = $state('');
 
 	let visibleDiscs = $derived(
@@ -30,6 +33,7 @@
 			filterDiscs(discStore.discs, {
 				status: statusFilter,
 				mediaType: mediaTypeFilter,
+				ownership: ownershipFilter,
 				query: searchQuery
 			}),
 			sortKey
@@ -119,6 +123,12 @@
 		complete: 'Complete'
 	};
 
+	const ownershipLabel: Record<Ownership, string> = {
+		owned: 'Owned',
+		wanted: 'Wanted',
+		digital_only: 'Digital only'
+	};
+
 	const statusClass: Record<string, string> = {
 		not_started: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
 		ripping: 'animate-pulse bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -186,6 +196,16 @@
 			...d,
 			armedAt: d.id === discId ? now : null
 		}));
+	}
+
+	async function setOwnership(discId: number, ownership: Ownership) {
+		const response = await fetch('/api/ownership', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId, ownership })
+		});
+		if (!response.ok) return;
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? { ...d, ownership } : d));
 	}
 
 	async function unarm(discId: number) {
@@ -326,6 +346,12 @@
 					<option value="movie">Movies</option>
 					<option value="tv">TV</option>
 				</select>
+				<select bind:value={ownershipFilter} class="rounded-md border p-2 text-sm">
+					<option value="all">All ownership</option>
+					<option value="owned">Owned</option>
+					<option value="wanted">Wanted</option>
+					<option value="digital_only">Digital only</option>
+				</select>
 				<select bind:value={sortKey} class="rounded-md border p-2 text-sm">
 					<option value="updated">Recently updated</option>
 					<option value="title">Title (A–Z)</option>
@@ -355,6 +381,13 @@
 							>
 								{statusLabel[disc.status]}
 							</span>
+							{#if disc.ownership !== 'owned'}
+								<span
+									class="mt-1 ml-1 inline-block rounded-full bg-purple-100 px-3 py-1 text-xs font-medium text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+								>
+									{ownershipLabel[disc.ownership]}
+								</span>
+							{/if}
 							{#if discStore.progressLog[disc.id]?.length}
 								<div
 									class="mt-1.5 max-w-xs space-y-0.5 rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1.5 dark:border-blue-900 dark:bg-blue-950/40"
@@ -411,6 +444,16 @@
 										Start ripping
 									</button>
 								{/if}
+								<select
+									value={disc.ownership}
+									onchange={(e) => setOwnership(disc.id, e.currentTarget.value as Ownership)}
+									aria-label="Ownership for {disc.title}"
+									class="rounded-md border p-1 text-xs"
+								>
+									<option value="owned">Owned</option>
+									<option value="wanted">Wanted</option>
+									<option value="digital_only">Digital only</option>
+								</select>
 								<button
 									class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:hover:bg-gray-800"
 									onclick={() => (pendingRemoveId = disc.id)}

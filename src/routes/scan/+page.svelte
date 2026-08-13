@@ -1,5 +1,6 @@
 <script lang="ts">
 	import BarcodeScanner from '$lib/components/BarcodeScanner.svelte';
+	import type { Ownership } from '$lib/types';
 
 	type Candidate = { id: number; name: string; type: string; year?: number; imdbId?: string };
 
@@ -35,6 +36,13 @@
 	// result row into the TV season prompt for the same candidate. Left
 	// blank/1 for the (overwhelmingly common) single-disc case.
 	let discCountInputs = $state<Record<number, number | undefined>>({});
+
+	// Ownership to record for a given candidate - 'owned' by default, since a
+	// barcode scan or manual add is usually a physical disc in hand. Switch to
+	// 'wanted' for a wishlist entry with no disc yet, or 'digital_only' for
+	// content already acquired (e.g. from the internet) but never physically
+	// owned. Keyed by candidate id, same pattern as discCountInputs.
+	let ownershipInputs = $state<Record<number, Ownership>>({});
 
 	// Tracks every successful add from the *current* result list, so a single
 	// search (e.g. "Toy Story") can add several matching discs one at a time
@@ -73,6 +81,7 @@
 		discConflict = null;
 		discNumberInput = 2;
 		discCountInputs = {};
+		ownershipInputs = {};
 		previewUrls = {};
 		previewLoading = {};
 		addedEntries = [];
@@ -175,7 +184,13 @@
 			seasonInput = guessSeasonNumber(rawLookupTitle) ?? undefined;
 			return;
 		}
-		confirmCandidate(candidate, null, null, discCountInputs[candidate.id]);
+		confirmCandidate(
+			candidate,
+			null,
+			null,
+			discCountInputs[candidate.id],
+			ownershipInputs[candidate.id]
+		);
 	}
 
 	function confirmPendingSeason() {
@@ -184,7 +199,8 @@
 			pendingCandidate,
 			seasonInput ?? null,
 			null,
-			discCountInputs[pendingCandidate.id]
+			discCountInputs[pendingCandidate.id],
+			ownershipInputs[pendingCandidate.id]
 		);
 	}
 
@@ -201,7 +217,8 @@
 		candidate: Candidate,
 		season: number | null,
 		discNumber: number | null = null,
-		discCount: number | undefined = undefined
+		discCount: number | undefined = undefined,
+		ownership: Ownership | undefined = undefined
 	) {
 		status = 'loading';
 
@@ -211,7 +228,8 @@
 			rawLookupTitle,
 			season,
 			discNumber,
-			discCount: discCount && discCount > 1 ? discCount : undefined
+			discCount: discCount && discCount > 1 ? discCount : undefined,
+			ownership
 		});
 
 		if (response.status === 409) {
@@ -235,19 +253,24 @@
 			return;
 		}
 
+		const ownershipSuffix =
+			data.disc.ownership && data.disc.ownership !== 'owned'
+				? ` (${data.disc.ownership === 'wanted' ? 'wanted' : 'digital only'})`
+				: '';
 		const createdDiscs: { title: string; season: number | null; discNumber: number | null }[] =
 			data.discs ?? [data.disc];
 		if (createdDiscs.length > 1) {
 			const seasonLabel = season ? ` season ${season}` : '';
-			message = `Added "${createdDiscs[0].title}"${seasonLabel} as ${createdDiscs.length} discs (Not started).`;
+			message = `Added "${createdDiscs[0].title}"${seasonLabel} as ${createdDiscs.length} discs (Not started)${ownershipSuffix}.`;
 		} else {
 			const discLabel = data.disc.discNumber ? ` (disc ${data.disc.discNumber})` : '';
-			message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''}${discLabel} as Not started.`;
+			message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''}${discLabel} as Not started${ownershipSuffix}.`;
 		}
 		status = 'idle';
 		addedEntries = [...addedEntries, { id: candidate.id, season }];
 		discConflict = null;
 		discCountInputs = { ...discCountInputs, [candidate.id]: undefined };
+		ownershipInputs = { ...ownershipInputs, [candidate.id]: 'owned' };
 		clearPendingAdd();
 	}
 
@@ -307,6 +330,20 @@
 					aria-label="Number of discs"
 					class="w-28 rounded-md border p-2"
 				/>
+				<select
+					value={ownershipInputs[pendingCandidate.id] ?? 'owned'}
+					onchange={(e) =>
+						(ownershipInputs = {
+							...ownershipInputs,
+							[pendingCandidate!.id]: e.currentTarget.value as Ownership
+						})}
+					aria-label="Ownership"
+					class="rounded-md border p-2 text-sm"
+				>
+					<option value="owned">Owned</option>
+					<option value="wanted">Wanted</option>
+					<option value="digital_only">Digital only</option>
+				</select>
 				<button
 					class="rounded-md border px-4 py-2"
 					onclick={confirmPendingSeason}
@@ -391,6 +428,20 @@
 								Added ✓
 							</span>
 						{:else}
+							<select
+								value={ownershipInputs[candidate.id] ?? 'owned'}
+								onchange={(e) =>
+									(ownershipInputs = {
+										...ownershipInputs,
+										[candidate.id]: e.currentTarget.value as Ownership
+									})}
+								aria-label="Ownership for {candidate.name}"
+								class="ml-auto rounded-md border p-1 text-xs"
+							>
+								<option value="owned">Owned</option>
+								<option value="wanted">Wanted</option>
+								<option value="digital_only">Digital only</option>
+							</select>
 							<input
 								type="number"
 								min="1"
@@ -398,7 +449,7 @@
 								placeholder="1"
 								aria-label="Number of discs for {candidate.name}"
 								title="Number of discs (leave blank for 1)"
-								class="ml-auto w-14 rounded-md border p-1 text-xs"
+								class="w-14 rounded-md border p-1 text-xs"
 							/>
 							<button
 								class="rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"

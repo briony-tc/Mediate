@@ -6,6 +6,9 @@ import { db } from '$lib/server/db';
 import { discs, scanEvents } from '$lib/server/db/schema';
 import { emit } from '$lib/server/events';
 
+const OWNERSHIP_VALUES = ['owned', 'wanted', 'digital_only'] as const;
+type Ownership = (typeof OWNERSHIP_VALUES)[number];
+
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 	const watchmodeId = Number(body?.watchmodeId);
@@ -23,6 +26,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const discCountInput = Number(body?.discCount);
 	const requestedDiscCount =
 		Number.isFinite(discCountInput) && discCountInput > 1 ? Math.floor(discCountInput) : 1;
+	// 'owned' by default - scanning a barcode or ripping a disc already implies
+	// physical possession, so every existing caller keeps behaving exactly as
+	// before. 'wanted' and 'digital_only' are opt-in (see schema.ts).
+	const ownership: Ownership = OWNERSHIP_VALUES.includes(body?.ownership)
+		? body.ownership
+		: 'owned';
 
 	if (!Number.isFinite(watchmodeId)) {
 		return json({ error: 'watchmodeId is required' }, { status: 400 });
@@ -38,6 +47,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		title: details.title,
 		mediaType,
 		season,
+		ownership,
 		year: details.year ?? null,
 		watchmodeId: details.id,
 		imdbId: details.imdbId ?? null,

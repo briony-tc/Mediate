@@ -6,6 +6,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 	return {
 		id: 1,
 		status: 'not_started',
+		ownership: 'owned',
 		title: 'Inception',
 		mediaType: 'movie',
 		season: null,

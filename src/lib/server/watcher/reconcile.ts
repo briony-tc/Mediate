@@ -98,10 +98,14 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 		// (armed fast path or fuzzy-match fallback) - once a disc is actually
 		// ripping, it's no longer "waiting to be armed". ripTitlesCompleted/Total
 		// are also reset, so a re-rip after a failed attempt doesn't show stale
-		// counts from the previous try.
+		// counts from the previous try. ownership is forced to 'owned' here too -
+		// a staging folder only appears once MakeMKV starts ripping a real disc,
+		// which is direct proof of possession, so this is what turns a 'wanted'
+		// wishlist entry into 'owned' automatically. No-op if already owned.
 		db.update(discs)
 			.set({
 				status,
+				ownership: 'owned',
 				stagedPath: path,
 				stagedAt: now,
 				updatedAt: now,

@@ -1,8 +1,10 @@
 export type DiscStatus = 'not_started' | 'ripping' | 'staged' | 'complete';
+export type Ownership = 'owned' | 'wanted' | 'digital_only';
 
 export type Disc = {
 	id: number;
 	status: DiscStatus;
+	ownership: Ownership;
 	title: string;
 	mediaType: 'movie' | 'tv';
 	season: number | null;

@@ -1,8 +1,9 @@
-import type { Disc, DiscStatus } from '$lib/types';
+import type { Disc, DiscStatus, Ownership } from '$lib/types';
 
 export type SortKey = 'updated' | 'title' | 'year' | 'status';
 export type MediaTypeFilter = 'all' | 'movie' | 'tv';
 export type StatusFilter = 'all' | DiscStatus;
+export type OwnershipFilter = 'all' | Ownership;
 
 const STATUS_ORDER: Record<DiscStatus, number> = {
 	not_started: 0,
@@ -13,12 +14,23 @@ const STATUS_ORDER: Record<DiscStatus, number> = {
 
 export function filterDiscs(
 	discs: Disc[],
-	{ status, mediaType, query }: { status: StatusFilter; mediaType: MediaTypeFilter; query: string }
+	{
+		status,
+		mediaType,
+		ownership = 'all',
+		query
+	}: {
+		status: StatusFilter;
+		mediaType: MediaTypeFilter;
+		ownership?: OwnershipFilter;
+		query: string;
+	}
 ): Disc[] {
 	const needle = query.trim().toLowerCase();
 	return discs.filter((disc) => {
 		if (status !== 'all' && disc.status !== status) return false;
 		if (mediaType !== 'all' && disc.mediaType !== mediaType) return false;
+		if (ownership !== 'all' && disc.ownership !== ownership) return false;
 		if (needle && !disc.title.toLowerCase().includes(needle)) return false;
 		return true;
 	});
@@ -94,6 +106,14 @@ export function mediaTypeCounts(discs: Disc[]): { movie: number; tv: number } {
 	const counts = { movie: 0, tv: 0 };
 	for (const disc of discs) {
 		counts[disc.mediaType] += 1;
+	}
+	return counts;
+}
+
+export function ownershipCounts(discs: Disc[]): Record<Ownership, number> {
+	const counts: Record<Ownership, number> = { owned: 0, wanted: 0, digital_only: 0 };
+	for (const disc of discs) {
+		counts[disc.ownership] += 1;
 	}
 	return counts;
 }

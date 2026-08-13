@@ -8,6 +8,17 @@ export const discs = sqliteTable('discs', {
 	status: text('status', { enum: ['not_started', 'ripping', 'staged', 'complete'] })
 		.notNull()
 		.default('not_started'),
+	// 'owned' (default) covers every disc that came through the physical rip
+	// pipeline - scanning a barcode or ripping a disc is itself proof of
+	// possession (see reconcile.ts's applyStatusTransition, which flips a
+	// 'wanted' row to 'owned' the moment its staging folder appears). 'wanted'
+	// is a wishlist entry with no disc yet. 'digital_only' is content already
+	// filed into Jellyfin (usually linked from an existing unmatchedFiles
+	// entry) that was never physically owned - e.g. acquired from the
+	// internet - so losing the Jellyfin file would mean losing it for good.
+	ownership: text('ownership', { enum: ['owned', 'wanted', 'digital_only'] })
+		.notNull()
+		.default('owned'),
 	title: text('title').notNull(),
 	mediaType: text('media_type', { enum: ['movie', 'tv'] }).notNull(),
 	// TV seasons are sold/barcoded individually but share one Watchmode title

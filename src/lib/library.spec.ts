@@ -4,6 +4,7 @@ import {
 	filterDiscs,
 	growthBuckets,
 	mediaTypeCounts,
+	ownershipCounts,
 	sortDiscs,
 	statusCounts,
 	topGenres
@@ -13,6 +14,7 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 	return {
 		id: 1,
 		status: 'not_started',
+		ownership: 'owned',
 		title: 'Inception',
 		mediaType: 'movie',
 		season: null,
@@ -66,6 +68,26 @@ describe('filterDiscs', () => {
 	it('combines all three filters', () => {
 		const result = filterDiscs(discs, { status: 'staged', mediaType: 'movie', query: 'fern' });
 		expect(result.map((d) => d.id)).toEqual([3]);
+	});
+
+	it('filters by ownership, defaulting to "all" when omitted', () => {
+		const withOwnership = [
+			makeDisc({ id: 1, ownership: 'owned' }),
+			makeDisc({ id: 2, ownership: 'wanted' }),
+			makeDisc({ id: 3, ownership: 'digital_only' })
+		];
+
+		expect(
+			filterDiscs(withOwnership, {
+				status: 'all',
+				mediaType: 'all',
+				ownership: 'wanted',
+				query: ''
+			}).map((d) => d.id)
+		).toEqual([2]);
+		expect(
+			filterDiscs(withOwnership, { status: 'all', mediaType: 'all', query: '' }).map((d) => d.id)
+		).toEqual([1, 2, 3]);
 	});
 });
 
@@ -154,6 +176,18 @@ describe('mediaTypeCounts', () => {
 			makeDisc({ mediaType: 'tv' })
 		];
 		expect(mediaTypeCounts(discs)).toEqual({ movie: 1, tv: 2 });
+	});
+});
+
+describe('ownershipCounts', () => {
+	it('tallies owned, wanted, and digital_only separately', () => {
+		const discs = [
+			makeDisc({ ownership: 'owned' }),
+			makeDisc({ ownership: 'owned' }),
+			makeDisc({ ownership: 'wanted' }),
+			makeDisc({ ownership: 'digital_only' })
+		];
+		expect(ownershipCounts(discs)).toEqual({ owned: 2, wanted: 1, digital_only: 1 });
 	});
 });
 
