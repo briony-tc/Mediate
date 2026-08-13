@@ -152,6 +152,54 @@ describe('POST /api/confirm', () => {
 		expect(testDb.select().from(discs).all()).toHaveLength(2);
 	});
 
+	it('creates a full multi-disc set in one request via discCount', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, discCount: 3 }));
+		const data = await response.json();
+
+		expect(response.status).toBe(201);
+		expect(data.disc.discNumber).toBe(1);
+		expect(data.discs.map((d: { discNumber: number | null }) => d.discNumber)).toEqual([1, 2, 3]);
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows).toHaveLength(3);
+		expect(rows.map((r) => r.discNumber).sort()).toEqual([1, 2, 3]);
+	});
+
+	it('logs a single scan event for a bulk discCount add, not one per disc', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1, barcode: '123', discCount: 3 }));
+
+		expect(testDb.select().from(scanEvents).all()).toHaveLength(1);
+	});
+
+	it('rejects a bulk discCount add when the title/season is already tracked', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discCount: 3 }));
+
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()).toHaveLength(1);
+	});
+
 	it('ignores a season value sent for a movie', async () => {
 		getTitleDetails.mockResolvedValue({
 			id: 1,

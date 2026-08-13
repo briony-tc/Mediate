@@ -16,6 +16,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	const requestedSeason = Number.isFinite(seasonInput) ? seasonInput : null;
 	const discNumberInput = Number(body?.discNumber);
 	const requestedDiscNumber = Number.isFinite(discNumberInput) ? discNumberInput : null;
+	// Lets the whole set be documented in one submission (e.g. "this is a
+	// 3-disc set") instead of adding disc 1, then reactively adding 2 and 3
+	// one at a time after each 409. Anything <= 1 is just the normal single-
+	// disc case.
+	const discCountInput = Number(body?.discCount);
+	const requestedDiscCount =
+		Number.isFinite(discCountInput) && discCountInput > 1 ? Math.floor(discCountInput) : 1;
 
 	if (!Number.isFinite(watchmodeId)) {
 		return json({ error: 'watchmodeId is required' }, { status: 400 });
@@ -25,72 +32,102 @@ export const POST: RequestHandler = async ({ request }) => {
 	const mediaType = toMediaType(details.type);
 	// Movies don't have seasons; any season value sent for one is ignored.
 	const season = mediaType === 'tv' ? requestedSeason : null;
+	const seasonCondition = season === null ? isNull(discs.season) : eq(discs.season, season);
 
-	// A plain re-scan (no discNumber) of an already-tracked title/season still
-	// 409s, same as always. An explicit discNumber only conflicts with a row
-	// that already has that exact disc number - this is what allows adding
-	// disc 2+ of a multi-disc title.
-	const existing = db
-		.select()
-		.from(discs)
-		.where(
-			and(
-				eq(discs.watchmodeId, watchmodeId),
-				season === null ? isNull(discs.season) : eq(discs.season, season),
-				requestedDiscNumber === null
-					? isNull(discs.discNumber)
-					: eq(discs.discNumber, requestedDiscNumber)
+	const baseValues = {
+		title: details.title,
+		mediaType,
+		season,
+		year: details.year ?? null,
+		watchmodeId: details.id,
+		imdbId: details.imdbId ?? null,
+		posterUrl: details.posterUrl ?? null,
+		genres: JSON.stringify(details.genreNames),
+		barcodeUpc: barcode,
+		rawLookupTitle: rawLookupTitle
+	};
+
+	let createdDiscs: (typeof discs.$inferSelect)[];
+
+	if (requestedDiscCount > 1) {
+		// Bulk path only applies to a brand new title/season - any existing row
+		// (single-disc or already part of a set) means the reactive "add another
+		// disc" flow (below) is what handles it instead, to avoid guessing how
+		// the new count should reconcile with what's already there.
+		const existing = db
+			.select()
+			.from(discs)
+			.where(and(eq(discs.watchmodeId, watchmodeId), seasonCondition))
+			.get();
+		if (existing) {
+			return json(
+				{ error: 'This title/season is already tracked', disc: existing },
+				{ status: 409 }
+			);
+		}
+
+		createdDiscs = db
+			.insert(discs)
+			.values(
+				Array.from({ length: requestedDiscCount }, (_, i) => ({
+					...baseValues,
+					discNumber: i + 1
+				}))
 			)
-		)
-		.get();
-	if (existing) {
-		return json({ error: 'This title/season is already tracked', disc: existing }, { status: 409 });
-	}
-
-	// Turning a previously single-disc entry into "disc 1" of a set, the
-	// moment a disc 2+ is explicitly added for the same title/season.
-	if (requestedDiscNumber !== null) {
-		const existingSingleDisc = db
+			.returning()
+			.all();
+	} else {
+		// A plain re-scan (no discNumber) of an already-tracked title/season still
+		// 409s, same as always. An explicit discNumber only conflicts with a row
+		// that already has that exact disc number - this is what allows adding
+		// disc 2+ of a multi-disc title one at a time.
+		const existing = db
 			.select()
 			.from(discs)
 			.where(
 				and(
 					eq(discs.watchmodeId, watchmodeId),
-					season === null ? isNull(discs.season) : eq(discs.season, season),
-					isNull(discs.discNumber)
+					seasonCondition,
+					requestedDiscNumber === null
+						? isNull(discs.discNumber)
+						: eq(discs.discNumber, requestedDiscNumber)
 				)
 			)
 			.get();
-		if (existingSingleDisc) {
-			db.update(discs)
-				.set({ discNumber: 1, updatedAt: Date.now() })
-				.where(eq(discs.id, existingSingleDisc.id))
-				.run();
-			emit({
-				discId: existingSingleDisc.id,
-				status: existingSingleDisc.status,
-				updatedAt: Date.now()
-			});
+		if (existing) {
+			return json(
+				{ error: 'This title/season is already tracked', disc: existing },
+				{ status: 409 }
+			);
 		}
-	}
 
-	const [disc] = db
-		.insert(discs)
-		.values({
-			title: details.title,
-			mediaType,
-			season,
-			discNumber: requestedDiscNumber,
-			year: details.year ?? null,
-			watchmodeId: details.id,
-			imdbId: details.imdbId ?? null,
-			posterUrl: details.posterUrl ?? null,
-			genres: JSON.stringify(details.genreNames),
-			barcodeUpc: barcode,
-			rawLookupTitle: rawLookupTitle
-		})
-		.returning()
-		.all();
+		// Turning a previously single-disc entry into "disc 1" of a set, the
+		// moment a disc 2+ is explicitly added for the same title/season.
+		if (requestedDiscNumber !== null) {
+			const existingSingleDisc = db
+				.select()
+				.from(discs)
+				.where(and(eq(discs.watchmodeId, watchmodeId), seasonCondition, isNull(discs.discNumber)))
+				.get();
+			if (existingSingleDisc) {
+				db.update(discs)
+					.set({ discNumber: 1, updatedAt: Date.now() })
+					.where(eq(discs.id, existingSingleDisc.id))
+					.run();
+				emit({
+					discId: existingSingleDisc.id,
+					status: existingSingleDisc.status,
+					updatedAt: Date.now()
+				});
+			}
+		}
+
+		createdDiscs = db
+			.insert(discs)
+			.values({ ...baseValues, discNumber: requestedDiscNumber })
+			.returning()
+			.all();
+	}
 
 	db.insert(scanEvents)
 		.values({
@@ -101,7 +138,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		})
 		.run();
 
-	emit({ discId: disc.id, status: disc.status, updatedAt: disc.updatedAt });
+	for (const disc of createdDiscs) {
+		emit({ discId: disc.id, status: disc.status, updatedAt: disc.updatedAt });
+	}
 
-	return json({ disc }, { status: 201 });
+	return json({ disc: createdDiscs[0], discs: createdDiscs }, { status: 201 });
 };

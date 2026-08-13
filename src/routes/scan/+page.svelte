@@ -30,6 +30,12 @@
 	let discConflict = $state<{ candidate: Candidate; season: number | null } | null>(null);
 	let discNumberInput = $state<number | undefined>(2);
 
+	// How many discs to create in one go for a given candidate, e.g. "this is
+	// a 3-disc set" - keyed by candidate id so the value survives from the
+	// result row into the TV season prompt for the same candidate. Left
+	// blank/1 for the (overwhelmingly common) single-disc case.
+	let discCountInputs = $state<Record<number, number | undefined>>({});
+
 	// Tracks every successful add from the *current* result list, so a single
 	// search (e.g. "Toy Story") can add several matching discs one at a time
 	// without the list disappearing after the first - it only clears when a
@@ -66,6 +72,7 @@
 		seasonInput = undefined;
 		discConflict = null;
 		discNumberInput = 2;
+		discCountInputs = {};
 		previewUrls = {};
 		previewLoading = {};
 		addedEntries = [];
@@ -168,12 +175,17 @@
 			seasonInput = guessSeasonNumber(rawLookupTitle) ?? undefined;
 			return;
 		}
-		confirmCandidate(candidate, null);
+		confirmCandidate(candidate, null, null, discCountInputs[candidate.id]);
 	}
 
 	function confirmPendingSeason() {
 		if (!pendingCandidate) return;
-		confirmCandidate(pendingCandidate, seasonInput ?? null);
+		confirmCandidate(
+			pendingCandidate,
+			seasonInput ?? null,
+			null,
+			discCountInputs[pendingCandidate.id]
+		);
 	}
 
 	// Clears just the in-progress season prompt after an add, leaving the
@@ -188,7 +200,8 @@
 	async function confirmCandidate(
 		candidate: Candidate,
 		season: number | null,
-		discNumber: number | null = null
+		discNumber: number | null = null,
+		discCount: number | undefined = undefined
 	) {
 		status = 'loading';
 
@@ -197,7 +210,8 @@
 			barcode: currentBarcode,
 			rawLookupTitle,
 			season,
-			discNumber
+			discNumber,
+			discCount: discCount && discCount > 1 ? discCount : undefined
 		});
 
 		if (response.status === 409) {
@@ -221,11 +235,19 @@
 			return;
 		}
 
-		const discLabel = data.disc.discNumber ? ` (disc ${data.disc.discNumber})` : '';
-		message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''}${discLabel} as Not started.`;
+		const createdDiscs: { title: string; season: number | null; discNumber: number | null }[] =
+			data.discs ?? [data.disc];
+		if (createdDiscs.length > 1) {
+			const seasonLabel = season ? ` season ${season}` : '';
+			message = `Added "${createdDiscs[0].title}"${seasonLabel} as ${createdDiscs.length} discs (Not started).`;
+		} else {
+			const discLabel = data.disc.discNumber ? ` (disc ${data.disc.discNumber})` : '';
+			message = `Added "${data.disc.title}"${data.disc.season ? ` season ${data.disc.season}` : ''}${discLabel} as Not started.`;
+		}
 		status = 'idle';
 		addedEntries = [...addedEntries, { id: candidate.id, season }];
 		discConflict = null;
+		discCountInputs = { ...discCountInputs, [candidate.id]: undefined };
 		clearPendingAdd();
 	}
 
@@ -276,6 +298,14 @@
 					bind:value={seasonInput}
 					placeholder="Season number"
 					class="w-32 rounded-md border p-2"
+				/>
+				<input
+					type="number"
+					min="1"
+					bind:value={discCountInputs[pendingCandidate.id]}
+					placeholder="Discs (1)"
+					aria-label="Number of discs"
+					class="w-28 rounded-md border p-2"
 				/>
 				<button
 					class="rounded-md border px-4 py-2"
@@ -361,8 +391,17 @@
 								Added ✓
 							</span>
 						{:else}
+							<input
+								type="number"
+								min="1"
+								bind:value={discCountInputs[candidate.id]}
+								placeholder="1"
+								aria-label="Number of discs for {candidate.name}"
+								title="Number of discs (leave blank for 1)"
+								class="ml-auto w-14 rounded-md border p-1 text-xs"
+							/>
 							<button
-								class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+								class="rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
 								onclick={() => selectCandidate(candidate)}
 								disabled={status === 'loading'}
 							>
