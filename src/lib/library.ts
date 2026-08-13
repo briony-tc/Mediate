@@ -12,6 +12,29 @@ const STATUS_ORDER: Record<DiscStatus, number> = {
 	complete: 3
 };
 
+export const statusLabel: Record<DiscStatus, string> = {
+	not_started: 'Not started',
+	ripping: 'Ripping',
+	// 'staged' now means "matched, rip confirmed done, but couldn't be
+	// auto-filed into Jellyfin" - auto-filing is near-instant when it works,
+	// so this status is now specifically the "needs a look" case.
+	staged: 'Needs attention',
+	complete: 'Complete'
+};
+
+export const statusClass: Record<DiscStatus, string> = {
+	not_started: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+	ripping: 'animate-pulse bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+	staged: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+	complete: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+};
+
+export const ownershipLabel: Record<Ownership, string> = {
+	owned: 'Owned',
+	wanted: 'Wanted',
+	digital_only: 'Digital only'
+};
+
 export function filterDiscs(
 	discs: Disc[],
 	{
