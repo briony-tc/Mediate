@@ -44,6 +44,7 @@
 	);
 
 	let disconnect: (() => void) | undefined;
+	let ignoredDialog: HTMLDialogElement | undefined;
 
 	let ignored = $state<typeof data.ignoredFiles>([]);
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
@@ -149,53 +150,72 @@
 	<LibraryStats discs={discStore.discs} />
 
 	{#if ignored.length > 0}
-		<section class="space-y-3">
-			<h2 class="text-lg font-medium">Ignored files ({ignored.length})</h2>
-			<p class="text-sm text-gray-500">
-				Files the watcher couldn't match that were dismissed - e.g. a digital-only copy ignored
-				before its title was added here. Link one to a title below, or restore it so it shows up
-				again under Rip Queue's "Needs attention".
-			</p>
-			<ul class="space-y-2">
-				{#each ignored as file (file.id)}
-					<li class="rounded-md border p-3">
-						<p class="truncate text-sm">{file.path}</p>
-						<p class="text-xs text-gray-500 uppercase">{file.tree}</p>
-						{#if file.bestGuessDiscId !== null}
-							<p class="mt-1 text-sm">
-								Best guess: {discTitle(file.bestGuessDiscId)} ({Math.round(
-									(file.bestGuessScore ?? 0) * 100
-								)}%)
-							</p>
-						{/if}
-						{#if linkableDiscs().length > 0}
-							<div class="mt-2 flex flex-wrap items-center gap-2">
-								<select bind:value={selectedDiscId[file.id]} class="rounded-md border p-1 text-sm">
-									<option value={undefined}>Pick a disc…</option>
-									{#each linkableDiscs() as disc (disc.id)}
-										<option value={disc.id}>{discLabel(disc)}</option>
-									{/each}
-								</select>
-								<button
-									class="rounded-md border px-3 py-1 text-sm"
-									disabled={selectedDiscId[file.id] === undefined}
-									onclick={() => linkIgnored(file.id, selectedDiscId[file.id]!)}
-								>
-									Link
-								</button>
-							</div>
-						{/if}
-						<button
-							class="mt-2 ml-2 rounded-md border px-3 py-1 text-sm"
-							onclick={() => restoreIgnored(file.id)}
-						>
-							Restore
-						</button>
-					</li>
-				{/each}
-			</ul>
-		</section>
+		<button
+			class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+			onclick={() => ignoredDialog?.showModal()}
+		>
+			Ignored files ({ignored.length})
+		</button>
 	{/if}
+
+	<dialog
+		bind:this={ignoredDialog}
+		class="w-full max-w-lg rounded-md border bg-white p-4 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+	>
+		<div class="flex items-center justify-between">
+			<h2 class="text-lg font-medium">Ignored files ({ignored.length})</h2>
+			<button
+				class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+				onclick={() => ignoredDialog?.close()}
+				aria-label="Close"
+			>
+				✕
+			</button>
+		</div>
+		<p class="mt-2 text-sm text-gray-500">
+			Files the watcher couldn't match that were dismissed - e.g. a digital-only copy ignored before
+			its title was added here. Link one to a title below, or restore it so it shows up again under
+			Rip Queue's "Needs attention".
+		</p>
+		<ul class="mt-3 max-h-96 space-y-2 overflow-y-auto">
+			{#each ignored as file (file.id)}
+				<li class="rounded-md border p-3">
+					<p class="truncate text-sm">{file.path}</p>
+					<p class="text-xs text-gray-500 uppercase">{file.tree}</p>
+					{#if file.bestGuessDiscId !== null}
+						<p class="mt-1 text-sm">
+							Best guess: {discTitle(file.bestGuessDiscId)} ({Math.round(
+								(file.bestGuessScore ?? 0) * 100
+							)}%)
+						</p>
+					{/if}
+					{#if linkableDiscs().length > 0}
+						<div class="mt-2 flex flex-wrap items-center gap-2">
+							<select bind:value={selectedDiscId[file.id]} class="rounded-md border p-1 text-sm">
+								<option value={undefined}>Pick a disc…</option>
+								{#each linkableDiscs() as disc (disc.id)}
+									<option value={disc.id}>{discLabel(disc)}</option>
+								{/each}
+							</select>
+							<button
+								class="rounded-md border px-3 py-1 text-sm"
+								disabled={selectedDiscId[file.id] === undefined}
+								onclick={() => linkIgnored(file.id, selectedDiscId[file.id]!)}
+							>
+								Link
+							</button>
+						</div>
+					{/if}
+					<button
+						class="mt-2 ml-2 rounded-md border px-3 py-1 text-sm"
+						onclick={() => restoreIgnored(file.id)}
+					>
+						Restore
+					</button>
+				</li>
+			{/each}
+		</ul>
+	</dialog>
 
 	<section class="space-y-3">
 		<h2 class="text-lg font-medium">Titles ({visibleDiscs.length} of {discStore.discs.length})</h2>
@@ -317,3 +337,9 @@
 		{/if}
 	</section>
 </div>
+
+<style>
+	dialog::backdrop {
+		background: rgb(0 0 0 / 0.5);
+	}
+</style>
