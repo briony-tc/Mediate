@@ -94,12 +94,16 @@
 
 	function discTitle(id: number | null) {
 		if (id === null) return `#${id}`;
-		return discStore.discs.find((d) => d.id === id)?.title ?? `#${id}`;
+		const disc = discStore.discs.find((d) => d.id === id);
+		if (!disc) return `#${id}`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${discNum}`;
 	}
 
 	function discLabel(disc: (typeof discStore.discs)[number]) {
 		const season = disc.season ? ` — Season ${disc.season}` : '';
-		return `${disc.title}${season} (${disc.mediaType})`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${season}${discNum} (${disc.mediaType})`;
 	}
 
 	function linkableDiscs() {
@@ -329,6 +333,7 @@
 						<p class="font-medium">
 							{disc.title}
 							{#if disc.season}<span class="text-gray-500">— Season {disc.season}</span>{/if}
+							{#if disc.discNumber}<span class="text-gray-500">— Disc {disc.discNumber}</span>{/if}
 							{#if disc.year}<span class="text-gray-500">({disc.year})</span>{/if}
 						</p>
 						<span

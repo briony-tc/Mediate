@@ -113,12 +113,16 @@
 
 	function discTitle(id: number | null) {
 		if (id === null) return `#${id}`;
-		return discStore.discs.find((d) => d.id === id)?.title ?? `#${id}`;
+		const disc = discStore.discs.find((d) => d.id === id);
+		if (!disc) return `#${id}`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${discNum}`;
 	}
 
 	function discLabel(disc: (typeof discStore.discs)[number]) {
 		const season = disc.season ? ` — Season ${disc.season}` : '';
-		return `${disc.title}${season} (${disc.mediaType})`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${season}${discNum} (${disc.mediaType})`;
 	}
 
 	/**
