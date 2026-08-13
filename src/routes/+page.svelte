@@ -149,9 +149,11 @@
 	/**
 	 * TV episode numbering (see promoteToJellyfin) continues from whatever's
 	 * already filed for the season, so ripping out of disc order produces
-	 * wrong episode numbers. This just flags that risk before arming - it
-	 * doesn't block it, since the user may know better (e.g. a disc genuinely
-	 * ripped out of order but re-filed manually).
+	 * wrong episode numbers - this is what keeps "Start ripping" hidden for a
+	 * later disc until every earlier disc of the same title/season reaches
+	 * 'complete'. A UI-level guard only (not enforced by /api/arm itself), so
+	 * it's not foolproof against multiple tabs/clients, but it's enough to
+	 * stop the mistake happening by accident in normal use.
 	 */
 	function earlierDiscIncomplete(disc: (typeof discStore.discs)[number]): boolean {
 		if (disc.discNumber === null || disc.discNumber <= 1) return false;
@@ -432,17 +434,18 @@
 									{#if earlierDiscIncomplete(disc)}
 										<span
 											class="text-xs text-amber-600 dark:text-amber-400"
-											title="Ripping out of order can leave TV episode numbering wrong - see the earlier disc of this title."
+											title="Ripping out of order can leave TV episode numbering wrong - finish the earlier disc of this title first."
 										>
 											⚠ Disc {disc.discNumber! - 1}+ not complete yet
 										</span>
+									{:else}
+										<button
+											class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+											onclick={() => arm(disc.id)}
+										>
+											Start ripping
+										</button>
 									{/if}
-									<button
-										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
-										onclick={() => arm(disc.id)}
-									>
-										Start ripping
-									</button>
 								{/if}
 								<select
 									value={disc.ownership}
