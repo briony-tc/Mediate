@@ -7,3 +7,6 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# drizzle-kit generated, not meant to be hand-formatted
+/drizzle/meta/

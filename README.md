@@ -1,6 +1,6 @@
 # Mediate
 
-A self-hosted tracker for migrating a physical DVD/Blu-ray collection onto a [Jellyfin](https://jellyfin.org/) server: scan a disc's barcode, confirm the title, and watch its status move from *not started* to *staged* to *complete* as it gets ripped and filed — no manual bookkeeping in a spreadsheet.
+A self-hosted tracker for migrating a physical DVD/Blu-ray collection onto a [Jellyfin](https://jellyfin.org/) server: scan a disc's barcode, confirm the title, and watch its status move from _not started_ to _staged_ to _complete_ as it gets ripped and filed — no manual bookkeeping in a spreadsheet.
 
 ## How it works
 

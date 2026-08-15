@@ -7,3 +7,4 @@ build/
 *.db-wal
 *.db-shm
 scripts/auto-rip.conf
+.DS_Store
