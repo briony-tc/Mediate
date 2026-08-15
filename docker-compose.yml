@@ -1,7 +1,7 @@
 services:
-  media-library-shelf:
+  mediate:
     build: .
-    container_name: media-library-shelf
+    container_name: mediate
     restart: unless-stopped
     env_file:
       - .env

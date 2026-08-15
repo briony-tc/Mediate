@@ -1,32 +1,47 @@
 #!/usr/bin/env bash
 # Triggered by udev (see 99-makemkv-autorip.rules) when a disc is inserted
-# into /dev/sr0. Rips with the MakeMKV CLI (no GUI dialogs), skipping any
-# title under 10 minutes (trailers, menu loops, ad clips) and ripping
-# everything else - reports live progress to media-library-shelf while
-# ripping, then tells it the rip is done via /api/rip-complete.
+# into the optical drive. Rips with the MakeMKV CLI (no GUI dialogs),
+# skipping any title under 10 minutes (trailers, menu loops, ad clips) and
+# ripping everything else - reports live progress to mediate
+# while ripping, then tells it the rip is done via /api/rip-complete.
 #
-# Deploying a change to this file: this repo copy is the source of truth -
-# copy it onto VIKI (replacing the currently-deployed script) after editing.
-# Editing this file alone has no effect on the live system.
+# This is a reference implementation of the "arm before inserting" +
+# webhook-progress design, built against one specific homelab (a udev rule
+# firing this on disc insert, MakeMKV running in a Docker container, Jellyfin
+# on the same host). Every host-specific value below is a config variable
+# with a generic-but-plausible default - copy scripts/auto-rip.conf.example
+# to the CONFIG_FILE path (or export the same names before running) and
+# adjust for your own setup rather than editing the constants in place.
+#
+# Deploying a change to this file: whichever host actually runs it needs its
+# own up-to-date copy - editing a checked-out copy of this repo alone has no
+# effect on a live system elsewhere.
 set -euo pipefail
 
-LOCK_FILE="/opt/data/scripts/.auto-rip.lock"
-LOG_FILE="/opt/data/scripts/autorip.log"
-STAGING_DIR="/mnt/storage/media/staging"
-WEBHOOK_URL="https://media-library-shelf.viki/api/rip-complete"
-PROGRESS_WEBHOOK_URL="https://media-library-shelf.viki/api/rip-progress"
-WEBHOOK_SECRET_FILE="/opt/data/scripts/rip-webhook-secret"
+CONFIG_FILE="${AUTO_RIP_CONFIG_FILE:-/opt/data/scripts/auto-rip.conf}"
+if [ -f "$CONFIG_FILE" ]; then
+	# shellcheck source=/dev/null
+	source "$CONFIG_FILE"
+fi
+
+LOCK_FILE="${LOCK_FILE:-/opt/data/scripts/.auto-rip.lock}"
+LOG_FILE="${LOG_FILE:-/opt/data/scripts/autorip.log}"
+STAGING_DIR="${STAGING_DIR:-/mnt/storage/media/staging}"
+APP_URL="${APP_URL:-https://mediate.example.com}"
+WEBHOOK_URL="${WEBHOOK_URL:-$APP_URL/api/rip-complete}"
+PROGRESS_WEBHOOK_URL="${PROGRESS_WEBHOOK_URL:-$APP_URL/api/rip-progress}"
+WEBHOOK_SECRET_FILE="${WEBHOOK_SECRET_FILE:-/opt/data/scripts/rip-webhook-secret}"
 # Triggers a Jellyfin library scan for whichever library (movies/tvshows) a
-# rip actually landed in, once media-library-shelf confirms it filed the
+# rip actually landed in, once mediate confirms it filed the
 # disc - so new content shows up without waiting for Jellyfin's own scheduled
 # scan or a manual "Scan Library" click. Needs a Jellyfin API key the user
 # generates themselves (Dashboard > Administration > API Keys) and saves to
 # JELLYFIN_API_KEY_FILE - missing/unreadable just skips the refresh (logged,
 # non-fatal), since the rip itself has already fully succeeded by this point.
-JELLYFIN_URL="https://jellyfin.viki"
-JELLYFIN_API_KEY_FILE="/opt/data/scripts/jellyfin-api-key"
-DRIVE="/dev/sr0"
-CONTAINER="makemkv"
+JELLYFIN_URL="${JELLYFIN_URL:-https://jellyfin.example.com}"
+JELLYFIN_API_KEY_FILE="${JELLYFIN_API_KEY_FILE:-/opt/data/scripts/jellyfin-api-key}"
+DRIVE="${DRIVE:-/dev/sr0}"
+CONTAINER="${CONTAINER:-makemkv}"
 # This script runs as root (udev runs RUN+= scripts as root), so anything it
 # rips ends up root-owned - harmless for the app's own automated promotion
 # (which runs inside its own container, unaffected by host file ownership),
@@ -35,12 +50,15 @@ CONTAINER="makemkv"
 # staging folder - "you don't have permission to access some of the items" -
 # even though the files inside were world-readable/writable, because moving
 # requires write access to the *directory*, which was root-only). Chowned to
-# this user right after every successful rip below.
-STAGING_OWNER="adminbri:adminbri"
-# /opt/makemkv/bin isn't on the container's $PATH for `docker exec` sessions
-# (confirmed: exec fails with "executable file not found in $PATH" otherwise) -
-# must use the full path.
-MAKEMKVCON="/opt/makemkv/bin/makemkvcon"
+# STAGING_OWNER right after every successful rip below - set this to the
+# non-root user that needs write access to the staging folder afterward
+# (e.g. for a Samba share), or leave unset to skip the chown entirely.
+STAGING_OWNER="${STAGING_OWNER:-}"
+# Full path to makemkvcon *inside* the container - needed because it isn't
+# necessarily on $PATH for `docker exec` sessions (confirmed on at least one
+# real image: exec fails with "executable file not found in $PATH" without
+# it).
+MAKEMKVCON="${MAKEMKVCON:-/opt/makemkv/bin/makemkvcon}"
 
 log() {
 	echo "$(date -Iseconds) $*" >>"$LOG_FILE"
@@ -70,7 +88,7 @@ sleep 3
 
 # The disc's own volume label is what the manual GUI workflow has always
 # named the per-disc staging folder after (e.g. "THE_VICAR_OF_DIBLEY_XMAS_SPECIAL"),
-# and it's what media-library-shelf's watcher expects as the top-level
+# and it's what mediate's watcher expects as the top-level
 # staging folder name. blkid reads it directly at the block-device level -
 # near-instant, no MakeMKV scan needed just for this.
 LABEL=$(blkid -o value -s LABEL "$DRIVE" 2>/dev/null)
@@ -106,7 +124,7 @@ mkdir -p "$DEST_HOST"
 # worth keeping, alongside genuine junk (trailers, menu loops, ad clips) that
 # MakeMKV's own ~2-minute minlength setting doesn't filter out. Length is a
 # reasonable enough proxy for "worth keeping" - anything under 10 minutes is
-# skipped, everything else gets ripped. media-library-shelf then sorts out
+# skipped, everything else gets ripped. mediate then sorts out
 # which surviving file is the main feature vs. an extra once ripped (see
 # promoteToJellyfin) - this script only decides what's worth ripping at all.
 #
@@ -241,9 +259,13 @@ log "Rip finished: $LABEL"
 
 # Non-fatal - a failed chown shouldn't stop the disc from being filed, it
 # would just mean the same Samba permission issue resurfaces if this
-# particular rip ever needs manual attention later.
-chown -R "$STAGING_OWNER" "$DEST_HOST" 2>>"$LOG_FILE" \
-	|| log "Could not fix ownership on $DEST_HOST (non-fatal)"
+# particular rip ever needs manual attention later. Skipped entirely when
+# STAGING_OWNER isn't set (e.g. no shared-folder permission issue on your
+# host to work around).
+if [ -n "$STAGING_OWNER" ]; then
+	chown -R "$STAGING_OWNER" "$DEST_HOST" 2>>"$LOG_FILE" \
+		|| log "Could not fix ownership on $DEST_HOST (non-fatal)"
+fi
 
 # Captured (rather than piped straight to $LOG_FILE, as before) so the
 # outcome/mediaType it returns can drive the Jellyfin library refresh below -

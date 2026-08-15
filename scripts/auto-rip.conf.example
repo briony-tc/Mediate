@@ -1,0 +1,39 @@
+# Config for scripts/auto-rip.sh. Copy this to the path auto-rip.sh reads
+# by default (/opt/data/scripts/auto-rip.conf), or point AUTO_RIP_CONFIG_FILE
+# at wherever you put it, and fill in the values for your own host. Anything
+# left unset falls back to the generic default baked into the script.
+
+# Where auto-rip.sh writes its lock/log files.
+#LOCK_FILE=/opt/data/scripts/.auto-rip.lock
+#LOG_FILE=/opt/data/scripts/autorip.log
+
+# Host path MakeMKV rips into - must match STAGING_HOST_PATH in the app's
+# own .env, since this is where mediate's watcher looks for it.
+#STAGING_DIR=/mnt/storage/media/staging
+
+# Base URL of your mediate deployment.
+#APP_URL=https://mediate.example.com
+
+# File holding the same secret as RIP_WEBHOOK_SECRET in the app's .env -
+# read at runtime rather than hardcoded here, so this conf file can be
+# world-readable without exposing anything.
+#WEBHOOK_SECRET_FILE=/opt/data/scripts/rip-webhook-secret
+
+# Your Jellyfin instance and an API key file (Jellyfin Dashboard >
+# Administration > API Keys). Leave the key file missing/unreadable to skip
+# the post-rip library refresh entirely.
+#JELLYFIN_URL=https://jellyfin.example.com
+#JELLYFIN_API_KEY_FILE=/opt/data/scripts/jellyfin-api-key
+
+# Optical drive device and the Docker container name running MakeMKV.
+#DRIVE=/dev/sr0
+#CONTAINER=makemkv
+
+# user:group to chown the staging folder to after a successful rip (this
+# script runs as root via udev, so ripped files start out root-owned). Only
+# needed if something else - e.g. a Samba share - needs non-root write
+# access to the folder afterward. Leave unset to skip the chown.
+#STAGING_OWNER=
+
+# Full path to makemkvcon inside the container, if it isn't on $PATH there.
+#MAKEMKVCON=/opt/makemkv/bin/makemkvcon
