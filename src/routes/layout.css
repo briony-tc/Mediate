@@ -1,1 +1,34 @@
 @import 'tailwindcss';
+
+/* Switches `dark:` from following prefers-color-scheme automatically to
+   requiring a `dark` class on <html> - src/lib/theme.ts (+ the no-flash
+   inline script in app.html) is what actually sets that class, initialized
+   from prefers-color-scheme but overridable via the toggle in +layout.svelte. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+	:root {
+		color-scheme: light;
+	}
+	/* Tells the browser to render native form controls (select, input,
+	   dialog, scrollbars) with its own dark styling - without this, they
+	   silently stay light (e.g. a <select> keeps a white native background)
+	   even once everything else has switched, which is what made select/
+	   input text unreadable in dark mode. */
+	:root.dark {
+		color-scheme: dark;
+	}
+	body {
+		@apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+	}
+	/* One rule instead of adding dark: classes to every input/select
+	   individually across every page - color-scheme above already fixes
+	   native rendering, this just matches the app's own gray palette
+	   instead of leaving it to whatever the browser's dark form styling
+	   happens to look like. */
+	input,
+	select,
+	textarea {
+		@apply dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100;
+	}
+}

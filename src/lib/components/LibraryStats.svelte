@@ -298,17 +298,15 @@
 		--tooltip-bg: #0b0b0b;
 		--tooltip-text: #ffffff;
 	}
-	@media (prefers-color-scheme: dark) {
-		.viz-root {
-			--series-blue: #3987e5;
-			--series-orange: #d95926;
-			--series-aqua: #199e70;
-			--series-yellow: #c98500;
-			--series-magenta: #d55181;
-			--series-green: #008300;
-			--chart-surface: #2c2c2a;
-			--tooltip-bg: #ffffff;
-			--tooltip-text: #0b0b0b;
-		}
+	:global(html.dark) .viz-root {
+		--series-blue: #3987e5;
+		--series-orange: #d95926;
+		--series-aqua: #199e70;
+		--series-yellow: #c98500;
+		--series-magenta: #d55181;
+		--series-green: #008300;
+		--chart-surface: #2c2c2a;
+		--tooltip-bg: #ffffff;
+		--tooltip-text: #0b0b0b;
 	}
 </style>

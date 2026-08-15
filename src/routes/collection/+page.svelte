@@ -216,7 +216,7 @@
 
 	<dialog
 		bind:this={ignoredDialog}
-		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
 	>
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-medium">Ignored files ({ignored.length})</h2>
@@ -296,7 +296,7 @@
 
 	<dialog
 		bind:this={unlinkDialog}
-		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+		class="m-auto max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-md border bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
 	>
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-medium">Unlink a title</h2>
