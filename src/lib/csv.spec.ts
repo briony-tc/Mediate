@@ -41,9 +41,7 @@ describe('sessionEntriesToCsv', () => {
 	});
 
 	it('parses the genres JSON array into a semicolon-joined list', () => {
-		const csv = sessionEntriesToCsv([
-			makeEntry({ genres: JSON.stringify(['Action', 'Sci-Fi']) })
-		]);
+		const csv = sessionEntriesToCsv([makeEntry({ genres: JSON.stringify(['Action', 'Sci-Fi']) })]);
 		expect(csv.split('\r\n')[1]).toBe('Inception,2010,Movie,,,Action; Sci-Fi,,No');
 	});
 
@@ -53,7 +51,9 @@ describe('sessionEntriesToCsv', () => {
 	});
 
 	it('quotes and escapes fields containing commas or quotes', () => {
-		const csv = sessionEntriesToCsv([makeEntry({ title: 'Alvin and the Chipmunks: "The Squeakquel"' })]);
+		const csv = sessionEntriesToCsv([
+			makeEntry({ title: 'Alvin and the Chipmunks: "The Squeakquel"' })
+		]);
 		expect(csv.split('\r\n')[1]).toBe(
 			'"Alvin and the Chipmunks: ""The Squeakquel""",2010,Movie,,,,,No'
 		);
