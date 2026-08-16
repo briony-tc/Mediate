@@ -4,6 +4,7 @@ import {
 	filterDiscs,
 	growthBuckets,
 	mediaTypeCounts,
+	ownershipCounts,
 	sortDiscs,
 	statusCounts,
 	topGenres
@@ -13,9 +14,11 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 	return {
 		id: 1,
 		status: 'not_started',
+		ownership: 'owned',
 		title: 'Inception',
 		mediaType: 'movie',
 		season: null,
+		discNumber: null,
 		year: 2010,
 		watchmodeId: 1,
 		imdbId: null,
@@ -24,7 +27,8 @@ function makeDisc(overrides: Partial<Disc> = {}): Disc {
 		barcodeUpc: null,
 		rawLookupTitle: null,
 		armedAt: null,
-		ripProgressPercent: null,
+		ripTitlesCompleted: null,
+		ripTitlesTotal: null,
 		stagedPath: null,
 		completePath: null,
 		stagedAt: null,
@@ -65,6 +69,26 @@ describe('filterDiscs', () => {
 		const result = filterDiscs(discs, { status: 'staged', mediaType: 'movie', query: 'fern' });
 		expect(result.map((d) => d.id)).toEqual([3]);
 	});
+
+	it('filters by ownership, defaulting to "all" when omitted', () => {
+		const withOwnership = [
+			makeDisc({ id: 1, ownership: 'owned' }),
+			makeDisc({ id: 2, ownership: 'wanted' }),
+			makeDisc({ id: 3, ownership: 'digital_only' })
+		];
+
+		expect(
+			filterDiscs(withOwnership, {
+				status: 'all',
+				mediaType: 'all',
+				ownership: 'wanted',
+				query: ''
+			}).map((d) => d.id)
+		).toEqual([2]);
+		expect(
+			filterDiscs(withOwnership, { status: 'all', mediaType: 'all', query: '' }).map((d) => d.id)
+		).toEqual([1, 2, 3]);
+	});
 });
 
 describe('sortDiscs', () => {
@@ -100,6 +124,19 @@ describe('sortDiscs', () => {
 		const copy = discs.slice();
 		sortDiscs(discs, 'title');
 		expect(discs).toEqual(copy);
+	});
+
+	it('keeps discs of the same title/season adjacent, ordered by disc number, wherever the group falls', () => {
+		const multiDisc = [
+			makeDisc({ id: 10, title: 'Zeta', watchmodeId: 99, discNumber: 2, updatedAt: 5 }),
+			makeDisc({ id: 11, title: 'Alpha', watchmodeId: 1, updatedAt: 1 }),
+			makeDisc({ id: 12, title: 'Zeta', watchmodeId: 99, discNumber: 1, updatedAt: 40 })
+		];
+
+		// Sorted by title, "Zeta" (id 12, the earlier-encountered disc-1 group
+		// member) anchors the group's position - disc 2 (id 10) follows right
+		// after it despite its own title-sort position being identical.
+		expect(sortDiscs(multiDisc, 'title').map((d) => d.id)).toEqual([11, 12, 10]);
 	});
 });
 
@@ -139,6 +176,18 @@ describe('mediaTypeCounts', () => {
 			makeDisc({ mediaType: 'tv' })
 		];
 		expect(mediaTypeCounts(discs)).toEqual({ movie: 1, tv: 2 });
+	});
+});
+
+describe('ownershipCounts', () => {
+	it('tallies owned, wanted, and digital_only separately', () => {
+		const discs = [
+			makeDisc({ ownership: 'owned' }),
+			makeDisc({ ownership: 'owned' }),
+			makeDisc({ ownership: 'wanted' }),
+			makeDisc({ ownership: 'digital_only' })
+		];
+		expect(ownershipCounts(discs)).toEqual({ owned: 2, wanted: 1, digital_only: 1 });
 	});
 });
 

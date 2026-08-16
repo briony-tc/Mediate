@@ -1,0 +1,1 @@
+ALTER TABLE `discs` ADD `ownership` text DEFAULT 'owned' NOT NULL;

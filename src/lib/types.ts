@@ -1,11 +1,14 @@
 export type DiscStatus = 'not_started' | 'ripping' | 'staged' | 'complete';
+export type Ownership = 'owned' | 'wanted' | 'digital_only';
 
 export type Disc = {
 	id: number;
 	status: DiscStatus;
+	ownership: Ownership;
 	title: string;
 	mediaType: 'movie' | 'tv';
 	season: number | null;
+	discNumber: number | null;
 	year: number | null;
 	watchmodeId: number;
 	imdbId: string | null;
@@ -14,7 +17,8 @@ export type Disc = {
 	barcodeUpc: string | null;
 	rawLookupTitle: string | null;
 	armedAt: number | null;
-	ripProgressPercent: number | null;
+	ripTitlesCompleted: number | null;
+	ripTitlesTotal: number | null;
 	stagedPath: string | null;
 	completePath: string | null;
 	stagedAt: number | null;
@@ -28,6 +32,7 @@ export type StatusChangeEvent = {
 	status: DiscStatus;
 	stagedPath?: string | null;
 	completePath?: string | null;
-	ripProgressPercent?: number | null;
+	ripTitlesCompleted?: number | null;
+	ripTitlesTotal?: number | null;
 	updatedAt: number;
 };

@@ -96,17 +96,22 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 	if (tree === 'staging') {
 		// armedAt is cleared here regardless of which path led to this transition
 		// (armed fast path or fuzzy-match fallback) - once a disc is actually
-		// ripping, it's no longer "waiting to be armed". ripProgressPercent is
-		// also reset, so a re-rip after a failed attempt doesn't show a stale
-		// leftover percent from the previous try.
+		// ripping, it's no longer "waiting to be armed". ripTitlesCompleted/Total
+		// are also reset, so a re-rip after a failed attempt doesn't show stale
+		// counts from the previous try. ownership is forced to 'owned' here too -
+		// a staging folder only appears once MakeMKV starts ripping a real disc,
+		// which is direct proof of possession, so this is what turns a 'wanted'
+		// wishlist entry into 'owned' automatically. No-op if already owned.
 		db.update(discs)
 			.set({
 				status,
+				ownership: 'owned',
 				stagedPath: path,
 				stagedAt: now,
 				updatedAt: now,
 				armedAt: null,
-				ripProgressPercent: null
+				ripTitlesCompleted: null,
+				ripTitlesTotal: null
 			})
 			.where(eq(discs.id, discId))
 			.run();
@@ -127,11 +132,15 @@ function applyStatusTransition(discId: number, tree: Tree, path: string) {
 }
 
 /**
- * Staging's flat folder name carries no season signal, so if multiple
- * not_started rows share the exact same title (e.g. seasons 1/2/3 of the
- * same show, or a specials compilation with no obvious season), we cannot
- * safely tell which one a rip belongs to - auto-linking would guess. Those
- * cases always fall through to manual review instead.
+ * Guards both trees. Staging's flat folder name carries no season signal, so
+ * if multiple not_started rows share the exact same title (e.g. seasons 1/2/3
+ * of the same show, or a specials compilation with no obvious season), we
+ * cannot safely tell which one a rip belongs to. The jellyfin tree has the
+ * same ambiguity for multi-disc titles: two discs of the same title/season
+ * (differing only by discNumber, which carries no on-disk signal for TV)
+ * score identically, and a tie would otherwise be broken by unstable DB row
+ * order rather than which disc actually has the content. Both cases fall
+ * through to manual review instead of guessing.
  */
 function isAutoLinkSafe(match: MatchResult, candidates: MatchCandidate[]): boolean {
 	return candidates.filter((c) => c.title === match.disc.title).length === 1;
@@ -229,7 +238,7 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 
 		const match = findBestDiscMatch(parsed.title, candidates);
 
-		if (match && match.score >= AUTO_MATCH_THRESHOLD) {
+		if (match && match.score >= AUTO_MATCH_THRESHOLD && isAutoLinkSafe(match, candidates)) {
 			applyStatusTransition(match.disc.id, tree, absolutePath);
 			resolveUnmatched(existingUnmatched);
 			return;

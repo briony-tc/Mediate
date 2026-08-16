@@ -53,26 +53,48 @@ afterEach(() => {
 describe('POST /api/rip-progress', () => {
 	it('returns 401 when the bearer secret is wrong', async () => {
 		const response = await POST(
-			makeRequest({ stagingFolderName: 'x', percent: 50 }, 'Bearer wrong')
+			makeRequest({ stagingFolderName: 'x', titlesCompleted: 0, titlesTotal: 2 }, 'Bearer wrong')
 		);
 		expect(response.status).toBe(401);
 	});
 
 	it('returns 400 when stagingFolderName is missing', async () => {
-		const response = await POST(makeRequest({ percent: 50 }));
+		const response = await POST(makeRequest({ titlesCompleted: 0, titlesTotal: 2 }));
 		expect(response.status).toBe(400);
 	});
 
-	it('returns 400 when percent is missing or out of range', async () => {
-		expect((await POST(makeRequest({ stagingFolderName: 'x' }))).status).toBe(400);
-		expect((await POST(makeRequest({ stagingFolderName: 'x', percent: -1 }))).status).toBe(400);
-		expect((await POST(makeRequest({ stagingFolderName: 'x', percent: 101 }))).status).toBe(400);
+	it('returns 400 when titlesTotal is missing, not an integer, or less than 1', async () => {
+		expect((await POST(makeRequest({ stagingFolderName: 'x', titlesCompleted: 0 }))).status).toBe(
+			400
+		);
+		expect(
+			(await POST(makeRequest({ stagingFolderName: 'x', titlesCompleted: 0, titlesTotal: 1.5 })))
+				.status
+		).toBe(400);
+		expect(
+			(await POST(makeRequest({ stagingFolderName: 'x', titlesCompleted: 0, titlesTotal: 0 })))
+				.status
+		).toBe(400);
 	});
 
-	it("updates the ripping disc's progress percent", async () => {
+	it('returns 400 when titlesCompleted is missing, negative, or greater than titlesTotal', async () => {
+		expect((await POST(makeRequest({ stagingFolderName: 'x', titlesTotal: 3 }))).status).toBe(400);
+		expect(
+			(await POST(makeRequest({ stagingFolderName: 'x', titlesCompleted: -1, titlesTotal: 3 })))
+				.status
+		).toBe(400);
+		expect(
+			(await POST(makeRequest({ stagingFolderName: 'x', titlesCompleted: 4, titlesTotal: 3 })))
+				.status
+		).toBe(400);
+	});
+
+	it("updates the ripping disc's title progress", async () => {
 		const disc = seedDisc({ status: 'ripping', stagedPath: join(stagingRoot, 'Inception') });
 
-		const response = await POST(makeRequest({ stagingFolderName: 'Inception', percent: 42 }));
+		const response = await POST(
+			makeRequest({ stagingFolderName: 'Inception', titlesCompleted: 1, titlesTotal: 3 })
+		);
 		const data = await response.json();
 
 		expect(data.outcome).toBe('updated');
@@ -81,11 +103,14 @@ describe('POST /api/rip-progress', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.ripProgressPercent).toBe(42);
+		expect(updated?.ripTitlesCompleted).toBe(1);
+		expect(updated?.ripTitlesTotal).toBe(3);
 	});
 
 	it('is a no-op for a staging folder with no matching disc', async () => {
-		const response = await POST(makeRequest({ stagingFolderName: 'Unknown', percent: 10 }));
+		const response = await POST(
+			makeRequest({ stagingFolderName: 'Unknown', titlesCompleted: 0, titlesTotal: 1 })
+		);
 		const data = await response.json();
 		expect(data.outcome).toBe('ignored');
 	});
@@ -93,7 +118,9 @@ describe('POST /api/rip-progress', () => {
 	it('is a no-op for a disc that is no longer ripping (e.g. rip-complete already fired)', async () => {
 		const disc = seedDisc({ status: 'complete', stagedPath: join(stagingRoot, 'Inception') });
 
-		const response = await POST(makeRequest({ stagingFolderName: 'Inception', percent: 99 }));
+		const response = await POST(
+			makeRequest({ stagingFolderName: 'Inception', titlesCompleted: 3, titlesTotal: 3 })
+		);
 		const data = await response.json();
 
 		expect(data.outcome).toBe('ignored');
@@ -102,6 +129,6 @@ describe('POST /api/rip-progress', () => {
 			.from(discs)
 			.all()
 			.find((d) => d.id === disc.id);
-		expect(updated?.ripProgressPercent).toBeNull();
+		expect(updated?.ripTitlesCompleted).toBeNull();
 	});
 });

@@ -1,8 +1,9 @@
-import type { Disc, DiscStatus } from '$lib/types';
+import type { Disc, DiscStatus, Ownership } from '$lib/types';
 
 export type SortKey = 'updated' | 'title' | 'year' | 'status';
 export type MediaTypeFilter = 'all' | 'movie' | 'tv';
 export type StatusFilter = 'all' | DiscStatus;
+export type OwnershipFilter = 'all' | Ownership;
 
 const STATUS_ORDER: Record<DiscStatus, number> = {
 	not_started: 0,
@@ -11,16 +12,79 @@ const STATUS_ORDER: Record<DiscStatus, number> = {
 	complete: 3
 };
 
+export const statusLabel: Record<DiscStatus, string> = {
+	not_started: 'Not started',
+	ripping: 'Ripping',
+	// 'staged' now means "matched, rip confirmed done, but couldn't be
+	// auto-filed into Jellyfin" - auto-filing is near-instant when it works,
+	// so this status is now specifically the "needs a look" case.
+	staged: 'Needs attention',
+	complete: 'Complete'
+};
+
+export const statusClass: Record<DiscStatus, string> = {
+	not_started: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+	ripping: 'animate-pulse bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+	staged: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+	complete: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+};
+
+export const ownershipLabel: Record<Ownership, string> = {
+	owned: 'Owned',
+	wanted: 'Wanted',
+	digital_only: 'Digital only'
+};
+
 export function filterDiscs(
 	discs: Disc[],
-	{ status, mediaType, query }: { status: StatusFilter; mediaType: MediaTypeFilter; query: string }
+	{
+		status,
+		mediaType,
+		ownership = 'all',
+		query
+	}: {
+		status: StatusFilter;
+		mediaType: MediaTypeFilter;
+		ownership?: OwnershipFilter;
+		query: string;
+	}
 ): Disc[] {
 	const needle = query.trim().toLowerCase();
 	return discs.filter((disc) => {
 		if (status !== 'all' && disc.status !== status) return false;
 		if (mediaType !== 'all' && disc.mediaType !== mediaType) return false;
+		if (ownership !== 'all' && disc.ownership !== ownership) return false;
 		if (needle && !disc.title.toLowerCase().includes(needle)) return false;
 		return true;
+	});
+}
+
+function discGroupKey(disc: Disc): string {
+	return `${disc.watchmodeId}:${disc.season ?? ''}`;
+}
+
+/**
+ * Keeps discs of the same multi-disc title/season (same watchmodeId+season)
+ * adjacent and in disc-number order, without disturbing the relative order
+ * the sort above already established between different titles/groups. A
+ * no-op for every single-disc title, which is still the overwhelming
+ * majority - those groups are always length 1.
+ */
+function groupMultiDiscTitles(discs: Disc[]): Disc[] {
+	const groups = new Map<string, Disc[]>();
+	const order: string[] = [];
+	for (const disc of discs) {
+		const key = discGroupKey(disc);
+		if (!groups.has(key)) {
+			groups.set(key, []);
+			order.push(key);
+		}
+		groups.get(key)!.push(disc);
+	}
+	return order.flatMap((key) => {
+		const group = groups.get(key)!;
+		if (group.length < 2) return group;
+		return group.slice().sort((a, b) => (a.discNumber ?? 0) - (b.discNumber ?? 0));
 	});
 }
 
@@ -42,7 +106,7 @@ export function sortDiscs(discs: Disc[], sortKey: SortKey): Disc[] {
 			sorted.sort((a, b) => b.updatedAt - a.updatedAt);
 			break;
 	}
-	return sorted;
+	return groupMultiDiscTitles(sorted);
 }
 
 export type StatusCounts = Record<DiscStatus, number> & { total: number };
@@ -65,6 +129,14 @@ export function mediaTypeCounts(discs: Disc[]): { movie: number; tv: number } {
 	const counts = { movie: 0, tv: 0 };
 	for (const disc of discs) {
 		counts[disc.mediaType] += 1;
+	}
+	return counts;
+}
+
+export function ownershipCounts(discs: Disc[]): Record<Ownership, number> {
+	const counts: Record<Ownership, number> = { owned: 0, wanted: 0, digital_only: 0 };
+	for (const disc of discs) {
+		counts[disc.ownership] += 1;
 	}
 	return counts;
 }

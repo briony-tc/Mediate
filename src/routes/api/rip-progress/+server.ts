@@ -9,11 +9,13 @@ import { isAuthorizedRipWebhook } from '$lib/server/webhookAuth';
 import { emit } from '$lib/server/events';
 
 /**
- * Called by the auto-rip script roughly every 30s while makemkvcon is still
- * ripping, so the UI can show a live "time remaining" estimate. Unlike
+ * Called by the auto-rip script at each title-loop boundary (not a live
+ * in-title percent - MakeMKV's own progress output isn't reliably readable
+ * during the save phase, confirmed live - this is a coarser but fully
+ * reliable "N of M titles" signal instead, driven by the script's own loop
+ * counters rather than anything MakeMKV chooses to print). Unlike
  * /api/rip-complete, an unmatched or stale-status update is expected (not
- * exceptional) - the script's background progress reporter can race the tail
- * end of the rip finishing, so this responds 200 rather than erroring.
+ * exceptional) - this responds 200 rather than erroring.
  */
 export const POST: RequestHandler = async ({ request }) => {
 	if (!isAuthorizedRipWebhook(request)) {
@@ -22,13 +24,20 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const body = await request.json();
 	const stagingFolderName: string | undefined = body?.stagingFolderName;
-	const percent = Number(body?.percent);
+	const titlesCompleted = Number(body?.titlesCompleted);
+	const titlesTotal = Number(body?.titlesTotal);
 
 	if (!stagingFolderName) {
 		return json({ error: 'stagingFolderName is required' }, { status: 400 });
 	}
-	if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-		return json({ error: 'percent must be a number between 0 and 100' }, { status: 400 });
+	if (!Number.isInteger(titlesTotal) || titlesTotal < 1) {
+		return json({ error: 'titlesTotal must be an integer >= 1' }, { status: 400 });
+	}
+	if (!Number.isInteger(titlesCompleted) || titlesCompleted < 0 || titlesCompleted > titlesTotal) {
+		return json(
+			{ error: 'titlesCompleted must be an integer between 0 and titlesTotal' },
+			{ status: 400 }
+		);
 	}
 
 	const absolutePath = join(serverEnv.STAGING_PATH, stagingFolderName);
@@ -40,11 +49,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const now = Date.now();
 	db.update(discs)
-		.set({ ripProgressPercent: percent, updatedAt: now })
+		.set({ ripTitlesCompleted: titlesCompleted, ripTitlesTotal: titlesTotal, updatedAt: now })
 		.where(eq(discs.id, disc.id))
 		.run();
 
-	emit({ discId: disc.id, status: 'ripping', ripProgressPercent: percent, updatedAt: now });
+	emit({
+		discId: disc.id,
+		status: 'ripping',
+		ripTitlesCompleted: titlesCompleted,
+		ripTitlesTotal: titlesTotal,
+		updatedAt: now
+	});
 
 	return json({ outcome: 'updated' });
 };

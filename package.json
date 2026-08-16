@@ -1,7 +1,13 @@
 {
-	"name": "my-app",
+	"name": "mediate",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.1.0",
+	"description": "Tracks migrating a physical DVD/Blu-ray collection onto a Jellyfin server: scan a barcode, resolve the title, and watch its status move from not started to staged to complete as it's ripped and filed.",
+	"license": "SEE LICENSE IN LICENSE",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/briony-tc/mediate.git"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

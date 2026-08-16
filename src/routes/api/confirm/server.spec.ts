@@ -58,6 +58,7 @@ describe('POST /api/confirm', () => {
 			title: 'Inception',
 			mediaType: 'movie',
 			status: 'not_started',
+			ownership: 'owned',
 			watchmodeId: 1,
 			barcodeUpc: '883929127538'
 		});
@@ -114,6 +115,160 @@ describe('POST /api/confirm', () => {
 
 		expect(response.status).toBe(409);
 		expect(testDb.select().from(discs).all()).toHaveLength(1);
+	});
+
+	it('allows adding a second disc of the same movie via an explicit discNumber, back-filling the first as disc 1', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+		const data = await response.json();
+
+		expect(response.status).toBe(201);
+		expect(data.disc.discNumber).toBe(2);
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows).toHaveLength(2);
+		expect(rows.map((r) => r.discNumber).sort()).toEqual([1, 2]);
+	});
+
+	it('still returns 409 for a plain re-scan (no discNumber) even after a multi-disc set exists', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: 2 }));
+
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()).toHaveLength(2);
+	});
+
+	it('creates a full multi-disc set in one request via discCount', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, discCount: 3 }));
+		const data = await response.json();
+
+		expect(response.status).toBe(201);
+		expect(data.disc.discNumber).toBe(1);
+		expect(data.discs.map((d: { discNumber: number | null }) => d.discNumber)).toEqual([1, 2, 3]);
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows).toHaveLength(3);
+		expect(rows.map((r) => r.discNumber).sort()).toEqual([1, 2, 3]);
+	});
+
+	it('logs a single scan event for a bulk discCount add, not one per disc', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1, barcode: '123', discCount: 3 }));
+
+		expect(testDb.select().from(scanEvents).all()).toHaveLength(1);
+	});
+
+	it('rejects a bulk discCount add when the title/season is already tracked', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		await POST(makeRequest({ watchmodeId: 1 }));
+		const response = await POST(makeRequest({ watchmodeId: 1, discCount: 3 }));
+
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()).toHaveLength(1);
+	});
+
+	it('stores an explicit wanted/digital_only ownership', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, ownership: 'wanted' }));
+		const data = await response.json();
+
+		expect(data.disc.ownership).toBe('wanted');
+	});
+
+	it('falls back to owned for an unrecognized ownership value', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, ownership: 'bogus' }));
+		const data = await response.json();
+
+		expect(data.disc.ownership).toBe('owned');
+	});
+
+	it('applies the requested ownership to every disc in a bulk discCount add', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, discCount: 2, ownership: 'wanted' }));
+		const data = await response.json();
+
+		expect(data.discs.every((d: { ownership: string }) => d.ownership === 'wanted')).toBe(true);
+	});
+
+	it('stores a null discNumber (not 0) when the client explicitly sends discNumber: null', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: null }));
+		const data = await response.json();
+
+		expect(data.disc.discNumber).toBeNull();
+	});
+
+	it('stores a null season (not 0) when the client explicitly sends season: null for a TV series', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 2,
+			title: 'Breaking Bad',
+			type: 'tv_series',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 2, season: null }));
+		const data = await response.json();
+
+		expect(data.disc.season).toBeNull();
 	});
 
 	it('ignores a season value sent for a movie', async () => {

@@ -1,0 +1,1 @@
+ALTER TABLE `discs` DROP COLUMN `rip_progress_percent`;

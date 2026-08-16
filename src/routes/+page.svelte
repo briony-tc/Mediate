@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { DiscStore } from '$lib/stores/discs.svelte';
-	import LibraryStats from '$lib/components/LibraryStats.svelte';
 	import {
 		filterDiscs,
+		ownershipLabel,
 		sortDiscs,
+		statusClass,
+		statusLabel,
 		type MediaTypeFilter,
 		type SortKey,
 		type StatusFilter
 	} from '$lib/library';
-	import { estimateSecondsRemaining, formatRemaining } from '$lib/rip-eta';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -93,15 +94,8 @@
 		pushEnabled = true;
 	}
 
-	// Ticked every 30s so the "time remaining" estimate on ripping discs
-	// visibly creeps down between SSE percent updates instead of sitting
-	// frozen - a single shared interval rather than one per row.
-	let nowTick = $state(Date.now());
-	let tickInterval: ReturnType<typeof setInterval> | undefined;
-
 	onMount(() => {
 		disconnect = discStore.connect();
-		tickInterval = setInterval(() => (nowTick = Date.now()), 30_000);
 
 		if ('serviceWorker' in navigator && 'PushManager' in window) {
 			pushSupported = true;
@@ -115,43 +109,42 @@
 
 	onDestroy(() => {
 		disconnect?.();
-		clearInterval(tickInterval);
 	});
-
-	function ripRemainingLabel(disc: (typeof discStore.discs)[number]): string {
-		const percent = disc.ripProgressPercent;
-		if (percent === null) return 'Ripping…';
-		const remaining = estimateSecondsRemaining(disc.stagedAt ?? disc.updatedAt, percent, nowTick);
-		return remaining === null
-			? `${percent}% ripped`
-			: `${percent}% — ${formatRemaining(remaining)}`;
-	}
-
-	const statusLabel: Record<string, string> = {
-		not_started: 'Not started',
-		ripping: 'Ripping',
-		// 'staged' now means "matched, rip confirmed done, but couldn't be
-		// auto-filed into Jellyfin" - auto-filing is near-instant when it works,
-		// so this status is now specifically the "needs a look" case.
-		staged: 'Needs attention',
-		complete: 'Complete'
-	};
-
-	const statusClass: Record<string, string> = {
-		not_started: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-		ripping: 'animate-pulse bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-		staged: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-		complete: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-	};
 
 	function discTitle(id: number | null) {
 		if (id === null) return `#${id}`;
-		return discStore.discs.find((d) => d.id === id)?.title ?? `#${id}`;
+		const disc = discStore.discs.find((d) => d.id === id);
+		if (!disc) return `#${id}`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${discNum}`;
 	}
 
 	function discLabel(disc: (typeof discStore.discs)[number]) {
 		const season = disc.season ? ` — Season ${disc.season}` : '';
-		return `${disc.title}${season} (${disc.mediaType})`;
+		const discNum = disc.discNumber ? ` — Disc ${disc.discNumber}` : '';
+		return `${disc.title}${season}${discNum} (${disc.mediaType})`;
+	}
+
+	/**
+	 * TV episode numbering (see promoteToJellyfin) continues from whatever's
+	 * already filed for the season, so ripping out of disc order produces
+	 * wrong episode numbers - this is what keeps "Start ripping" hidden for a
+	 * later disc until every earlier disc of the same title/season reaches
+	 * 'complete'. A UI-level guard only (not enforced by /api/arm itself), so
+	 * it's not foolproof against multiple tabs/clients, but it's enough to
+	 * stop the mistake happening by accident in normal use.
+	 */
+	function earlierDiscIncomplete(disc: (typeof discStore.discs)[number]): boolean {
+		if (disc.discNumber === null || disc.discNumber <= 1) return false;
+		return discStore.discs.some(
+			(d) =>
+				d.id !== disc.id &&
+				d.watchmodeId === disc.watchmodeId &&
+				d.season === disc.season &&
+				d.discNumber !== null &&
+				d.discNumber < disc.discNumber! &&
+				d.status !== 'complete'
+		);
 	}
 
 	function linkableDiscs() {
@@ -164,9 +157,10 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ unmatchedFileId, discId })
 		});
-		if (response.ok) {
-			unmatched = unmatched.filter((u) => u.id !== unmatchedFileId);
-		}
+		if (!response.ok) return;
+		const data = await response.json();
+		unmatched = unmatched.filter((u) => u.id !== unmatchedFileId);
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? data.disc : d));
 	}
 
 	// Arming is a same-tab user action, not an async filesystem event, so - like
@@ -226,7 +220,7 @@
 
 <div class="mx-auto max-w-3xl space-y-8 p-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">Library</h1>
+		<h1 class="text-2xl font-semibold">Rip Queue</h1>
 		{#if pushSupported && !pushEnabled}
 			<button
 				class="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -236,8 +230,6 @@
 			</button>
 		{/if}
 	</div>
-
-	<LibraryStats discs={discStore.discs} />
 
 	{#if armedDisc}
 		<section
@@ -342,6 +334,8 @@
 								{disc.title}
 								{#if disc.season}<span class="text-gray-500">— Season {disc.season}</span>{/if}
 								{#if disc.year}<span class="text-gray-500">({disc.year})</span>{/if}
+								{#if disc.discNumber}<span class="text-gray-500">— Disc {disc.discNumber}</span
+									>{/if}
 							</p>
 							<p class="text-xs text-gray-500 uppercase">{disc.mediaType}</p>
 							<span
@@ -351,17 +345,26 @@
 							>
 								{statusLabel[disc.status]}
 							</span>
-							{#if disc.status === 'ripping'}
-								<div class="mt-1.5 max-w-[200px]">
-									<div
-										class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"
-									>
-										<div
-											class="h-full rounded-full bg-blue-600 dark:bg-blue-500"
-											style="width: {disc.ripProgressPercent ?? 0}%"
-										></div>
-									</div>
-									<p class="mt-1 text-xs text-gray-500">{ripRemainingLabel(disc)}</p>
+							{#if disc.ownership !== 'owned'}
+								<span
+									class="mt-1 ml-1 inline-block rounded-full bg-purple-100 px-3 py-1 text-xs font-medium text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+								>
+									{ownershipLabel[disc.ownership]}
+								</span>
+							{/if}
+							{#if discStore.progressLog[disc.id]?.length}
+								<div
+									class="mt-1.5 max-w-xs space-y-0.5 rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1.5 dark:border-blue-900 dark:bg-blue-950/40"
+								>
+									{#each discStore.progressLog[disc.id] as line, i (i)}
+										<p
+											class="text-xs {i === discStore.progressLog[disc.id].length - 1
+												? 'font-medium text-blue-900 dark:text-blue-200'
+												: 'text-gray-500 dark:text-gray-400'}"
+										>
+											{line}
+										</p>
+									{/each}
 								</div>
 							{/if}
 						</div>
@@ -390,12 +393,21 @@
 										Armed
 									</span>
 								{:else if disc.status === 'not_started'}
-									<button
-										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
-										onclick={() => arm(disc.id)}
-									>
-										Start ripping
-									</button>
+									{#if earlierDiscIncomplete(disc)}
+										<span
+											class="text-xs text-amber-600 dark:text-amber-400"
+											title="Ripping out of order can leave TV episode numbering wrong - finish the earlier disc of this title first."
+										>
+											⚠ Disc {disc.discNumber! - 1}+ not complete yet
+										</span>
+									{:else}
+										<button
+											class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+											onclick={() => arm(disc.id)}
+										>
+											Start ripping
+										</button>
+									{/if}
 								{/if}
 								<button
 									class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:hover:bg-gray-800"

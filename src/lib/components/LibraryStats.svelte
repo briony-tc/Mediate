@@ -1,11 +1,18 @@
 <script lang="ts">
 	import type { Disc } from '$lib/types';
-	import { growthBuckets, mediaTypeCounts, statusCounts, topGenres } from '$lib/library';
+	import {
+		growthBuckets,
+		mediaTypeCounts,
+		ownershipCounts,
+		statusCounts,
+		topGenres
+	} from '$lib/library';
 
 	let { discs }: { discs: Disc[] } = $props();
 
 	let counts = $derived(statusCounts(discs));
 	let media = $derived(mediaTypeCounts(discs));
+	let ownership = $derived(ownershipCounts(discs));
 	let genres = $derived(topGenres(discs));
 	let weeks = $derived(growthBuckets(discs));
 	let maxWeekCount = $derived(Math.max(1, ...weeks.map((w) => w.count)));
@@ -38,6 +45,19 @@
 		[
 			{ key: 'movie', label: 'Movies', count: media.movie, color: 'var(--series-blue)' },
 			{ key: 'tv', label: 'TV', count: media.tv, color: 'var(--series-orange)' }
+		].filter((s) => s.count > 0)
+	);
+
+	const ownershipSegments = $derived(
+		[
+			{ key: 'owned', label: 'Owned', count: ownership.owned, color: 'var(--status-good)' },
+			{ key: 'wanted', label: 'Wanted', count: ownership.wanted, color: 'var(--status-warning)' },
+			{
+				key: 'digital_only',
+				label: 'Digital only',
+				count: ownership.digital_only,
+				color: 'var(--series-magenta)'
+			}
 		].filter((s) => s.count > 0)
 	);
 
@@ -162,6 +182,49 @@
 			</div>
 		{/if}
 
+		{#if ownershipSegments.length > 0}
+			<div class="space-y-2">
+				<p class="text-sm font-medium">Physical collection</p>
+				<div
+					class="flex h-6 w-full overflow-hidden rounded-[4px] bg-[var(--chart-surface)]"
+					role="img"
+					aria-label="Ownership: {ownershipSegments.map((s) => `${s.label} ${s.count}`).join(', ')}"
+				>
+					{#each ownershipSegments as segment, i (segment.key)}
+						<button
+							type="button"
+							class="group relative h-full border-0 p-0"
+							class:rounded-l-[4px]={i === 0}
+							class:rounded-r-[4px]={i === ownershipSegments.length - 1}
+							style="width: {pct(
+								segment.count,
+								counts.total
+							)}%; background: {segment.color}; margin-left: {i > 0 ? '2px' : '0'};"
+							aria-label="{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)"
+						>
+							<div
+								aria-hidden="true"
+								class="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 rounded-md bg-[var(--tooltip-bg)] px-2 py-1 text-xs whitespace-nowrap text-[var(--tooltip-text)] opacity-0 group-hover:opacity-100 group-focus:opacity-100"
+							>
+								{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)
+							</div>
+						</button>
+					{/each}
+				</div>
+				<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+					{#each ownershipSegments as segment (segment.key)}
+						<span class="flex items-center gap-1.5">
+							<span
+								class="inline-block h-2.5 w-2.5 rounded-full"
+								style="background: {segment.color}"
+							></span>
+							{segment.label}: {segment.count} ({pct(segment.count, counts.total)}%)
+						</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		{#if genres.length > 0}
 			<div class="space-y-2">
 				<p class="text-sm font-medium">Top genres</p>
@@ -235,17 +298,15 @@
 		--tooltip-bg: #0b0b0b;
 		--tooltip-text: #ffffff;
 	}
-	@media (prefers-color-scheme: dark) {
-		.viz-root {
-			--series-blue: #3987e5;
-			--series-orange: #d95926;
-			--series-aqua: #199e70;
-			--series-yellow: #c98500;
-			--series-magenta: #d55181;
-			--series-green: #008300;
-			--chart-surface: #2c2c2a;
-			--tooltip-bg: #ffffff;
-			--tooltip-text: #0b0b0b;
-		}
+	:global(html.dark) .viz-root {
+		--series-blue: #3987e5;
+		--series-orange: #d95926;
+		--series-aqua: #199e70;
+		--series-yellow: #c98500;
+		--series-magenta: #d55181;
+		--series-green: #008300;
+		--chart-surface: #2c2c2a;
+		--tooltip-bg: #ffffff;
+		--tooltip-text: #0b0b0b;
 	}
 </style>

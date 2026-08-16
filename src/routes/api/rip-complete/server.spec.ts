@@ -76,6 +76,7 @@ describe('POST /api/rip-complete', () => {
 		const data = await response.json();
 
 		expect(data.outcome).toBe('promoted');
+		expect(data.mediaType).toBe('movie');
 		expect(readdirSync(join(jellyfinRoot, 'movies', 'Inception'))).toEqual(['Inception.mkv']);
 
 		const updated = testDb
@@ -84,6 +85,21 @@ describe('POST /api/rip-complete', () => {
 			.all()
 			.find((d) => d.id === disc.id);
 		expect(updated?.status).toBe('complete');
+	});
+
+	it('includes mediaType: tv for a promoted TV disc', async () => {
+		testDb
+			.insert(discs)
+			.values({ title: 'Breaking Bad', mediaType: 'tv', season: 1, watchmodeId: 1 })
+			.run();
+		mkdirSync(join(stagingRoot, 'Breaking Bad'));
+		writeFileSync(join(stagingRoot, 'Breaking Bad', 'title_t00.mkv'), 'x');
+
+		const response = await POST(makeRequest({ stagingFolderName: 'Breaking Bad' }));
+		const data = await response.json();
+
+		expect(data.outcome).toBe('promoted');
+		expect(data.mediaType).toBe('tv');
 	});
 
 	it('promotes a disc that was manually linked (status staged) while the rip was still running', async () => {

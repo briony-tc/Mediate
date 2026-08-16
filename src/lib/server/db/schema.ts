@@ -8,12 +8,29 @@ export const discs = sqliteTable('discs', {
 	status: text('status', { enum: ['not_started', 'ripping', 'staged', 'complete'] })
 		.notNull()
 		.default('not_started'),
+	// 'owned' (default) covers every disc that came through the physical rip
+	// pipeline - scanning a barcode or ripping a disc is itself proof of
+	// possession (see reconcile.ts's applyStatusTransition, which flips a
+	// 'wanted' row to 'owned' the moment its staging folder appears). 'wanted'
+	// is a wishlist entry with no disc yet. 'digital_only' is content already
+	// filed into Jellyfin (usually linked from an existing unmatchedFiles
+	// entry) that was never physically owned - e.g. acquired from the
+	// internet - so losing the Jellyfin file would mean losing it for good.
+	ownership: text('ownership', { enum: ['owned', 'wanted', 'digital_only'] })
+		.notNull()
+		.default('owned'),
 	title: text('title').notNull(),
 	mediaType: text('media_type', { enum: ['movie', 'tv'] }).notNull(),
 	// TV seasons are sold/barcoded individually but share one Watchmode title
 	// (the series), so watchmodeId alone can't be unique - (watchmodeId,
 	// season) identifies a row; null season means "movie" or "whole series".
 	season: integer('season'),
+	// Set when this disc is one of several covering the same (watchmodeId,
+	// season) - e.g. a film split across 2 DVDs, or a TV season sold across
+	// multiple discs. Null means "single disc" (the default, and still the
+	// overwhelming majority of titles) - promoteToJellyfin branches on this to
+	// avoid discs of the same title overwriting each other on file.
+	discNumber: integer('disc_number'),
 	year: integer('year'),
 	watchmodeId: integer('watchmode_id').notNull(),
 	imdbId: text('imdb_id'),
@@ -26,10 +43,13 @@ export const discs = sqliteTable('discs', {
 	// unconditionally instead of fuzzy-matching by folder name. Cleared the
 	// moment it actually transitions to 'ripping'. Null the rest of the time.
 	armedAt: integer('armed_at'),
-	// Latest known percent-complete (0-100) reported by the auto-rip script
-	// while status is 'ripping', via /api/rip-progress. Null before the first
-	// report arrives, or once the disc leaves 'ripping'.
-	ripProgressPercent: integer('rip_progress_percent'),
+	// How many titles of the multi-title rip are done vs. total, reported by
+	// the auto-rip script at each loop boundary (not a live in-title percent -
+	// MakeMKV's own progress output isn't reliably readable, confirmed live -
+	// this is a coarser but fully reliable signal instead). Null before the
+	// first report arrives, or once the disc leaves 'ripping'.
+	ripTitlesCompleted: integer('rip_titles_completed'),
+	ripTitlesTotal: integer('rip_titles_total'),
 	stagedPath: text('staged_path'),
 	completePath: text('complete_path'),
 	stagedAt: integer('staged_at'),

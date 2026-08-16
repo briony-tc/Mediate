@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { discs, unmatchedFiles } from '$lib/server/db/schema';
 import { emit } from '$lib/server/events';
+import { promoteToJellyfin } from '$lib/server/promote';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
@@ -24,35 +25,52 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const now = Date.now();
-	const status = unmatchedFile.tree === 'staging' ? 'staged' : 'complete';
+	let disc: typeof discs.$inferSelect | undefined;
 
-	const [disc] = db
-		.update(discs)
-		.set(
-			unmatchedFile.tree === 'staging'
-				? { status, stagedPath: unmatchedFile.path, stagedAt: now, updatedAt: now }
-				: { status, completePath: unmatchedFile.path, completedAt: now, updatedAt: now }
-		)
-		.where(eq(discs.id, discId))
-		.returning()
-		.all();
-
-	if (!disc) {
-		return json({ error: 'disc not found' }, { status: 404 });
+	if (unmatchedFile.tree === 'staging') {
+		// A staging folder only ever gets auto-filed by /api/rip-complete, fired
+		// once by auto-rip.sh right after the rip finishes. A folder that's
+		// still unmatched at that point (no disc existed yet to link it to)
+		// never gets another chance at promotion - so unlike the jellyfin-tree
+		// case below (where the file is already sitting in place), this has to
+		// actually call promoteToJellyfin itself, or the disc would sit at
+		// 'staged' ("needs attention") forever despite being "linked".
+		[disc] = db
+			.update(discs)
+			.set({ stagedPath: unmatchedFile.path, stagedAt: now, updatedAt: now })
+			.where(eq(discs.id, discId))
+			.returning()
+			.all();
+		if (!disc) {
+			return json({ error: 'disc not found' }, { status: 404 });
+		}
+		// Sets status to 'complete' (and emits) on success, or back to 'staged'
+		// (and emits) if the folder has no rippable files / a filesystem error -
+		// either way this disc's final state is settled by the time it returns.
+		promoteToJellyfin(disc, unmatchedFile.path);
+		disc = db.select().from(discs).where(eq(discs.id, discId)).get();
+	} else {
+		[disc] = db
+			.update(discs)
+			.set({
+				status: 'complete',
+				completePath: unmatchedFile.path,
+				completedAt: now,
+				updatedAt: now
+			})
+			.where(eq(discs.id, discId))
+			.returning()
+			.all();
+		if (!disc) {
+			return json({ error: 'disc not found' }, { status: 404 });
+		}
+		emit({ discId: disc.id, status: disc.status, completePath: disc.completePath, updatedAt: now });
 	}
 
 	db.update(unmatchedFiles)
 		.set({ resolution: 'linked' })
 		.where(eq(unmatchedFiles.id, unmatchedFileId))
 		.run();
-
-	emit({
-		discId: disc.id,
-		status: disc.status,
-		stagedPath: unmatchedFile.tree === 'staging' ? unmatchedFile.path : undefined,
-		completePath: unmatchedFile.tree === 'jellyfin' ? unmatchedFile.path : undefined,
-		updatedAt: now
-	});
 
 	return json({ disc });
 };

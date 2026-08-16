@@ -20,6 +20,7 @@ describe('db schema', () => {
 			.all();
 
 		expect(disc.status).toBe('not_started');
+		expect(disc.ownership).toBe('owned');
 		expect(disc.title).toBe('Inception');
 		expect(disc.createdAt).toBeTypeOf('number');
 

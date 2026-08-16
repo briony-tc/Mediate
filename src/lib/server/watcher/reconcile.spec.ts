@@ -127,11 +127,25 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
-	it('resets a leftover ripProgressPercent from a previous attempt when a disc starts ripping again', () => {
+	it("flips a 'wanted' wishlist disc to 'owned' the moment it actually starts ripping", () => {
+		const disc = seedDisc({ title: 'Inception', status: 'not_started', ownership: 'wanted' });
+
+		onFileSeen('/staging/Inception', 'Inception', 'staging');
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.ownership).toBe('owned');
+	});
+
+	it('resets leftover title-progress counts from a previous attempt when a disc starts ripping again', () => {
 		const disc = seedDisc({
 			title: 'Inception',
 			status: 'not_started',
-			ripProgressPercent: 87
+			ripTitlesCompleted: 2,
+			ripTitlesTotal: 3
 		});
 
 		onFileSeen('/staging/Inception', 'Inception', 'staging');
@@ -142,7 +156,8 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 			.all()
 			.find((d) => d.id === disc.id);
 		expect(updated?.status).toBe('ripping');
-		expect(updated?.ripProgressPercent).toBeNull();
+		expect(updated?.ripTitlesCompleted).toBeNull();
+		expect(updated?.ripTitlesTotal).toBeNull();
 	});
 
 	it('matches a messy real-world MakeMKV disc-label folder name', () => {
@@ -375,6 +390,29 @@ describe('onFileSeen - jellyfin tree (movies/tv/season convention)', () => {
 		const rows = testDb.select().from(discs).all();
 		expect(rows.find((d) => d.id === season2.id)?.status).toBe('complete');
 		expect(rows.find((d) => d.id === season1.id)?.status).toBe('not_started');
+	});
+
+	it('does not auto-link a season folder when two discs of the same title/season differ only by discNumber', () => {
+		const disc1 = seedDisc({
+			title: 'The Vicar of Dibley',
+			mediaType: 'tv',
+			season: 2,
+			discNumber: 1
+		});
+		const disc2 = seedDisc({
+			title: 'The Vicar of Dibley',
+			mediaType: 'tv',
+			season: 2,
+			discNumber: 2
+		});
+		const absolute = '/jellyfin/tv/The Vicar of Dibley/Season 2';
+
+		onFileSeen(absolute, ['tv', 'The Vicar of Dibley', 'Season 2'].join(sep), 'jellyfin');
+
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === disc1.id)?.status).toBe('not_started');
+		expect(rows.find((d) => d.id === disc2.id)?.status).toBe('not_started');
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
 	});
 
 	it('ignores a bare tv show folder with no season info', () => {
