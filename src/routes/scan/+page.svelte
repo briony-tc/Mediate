@@ -214,6 +214,12 @@
 		if (!response.ok) {
 			status = 'error';
 			message = data.error ?? 'Search failed.';
+			// A completed search (even a failed one) hands focus back to the
+			// hidden scanner input - otherwise the next physical barcode scan's
+			// keystrokes keep landing in this text box instead, indefinitely,
+			// since nothing else naturally returns focus here until a page
+			// refresh.
+			focusSignal += 1;
 			return;
 		}
 
@@ -221,6 +227,7 @@
 		loadPreviews(candidates);
 		status = 'idle';
 		message = candidates.length === 0 ? 'No matches found.' : 'Pick the correct match:';
+		focusSignal += 1;
 	}
 
 	function selectCandidate(candidate: Candidate) {
