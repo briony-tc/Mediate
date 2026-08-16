@@ -86,7 +86,15 @@
 	});
 
 	function logSessionEntries(
-		discs: { title: string; year: number | null; mediaType: string; season: number | null; discNumber: number | null; genres: string | null; barcodeUpc: string | null }[],
+		discs: {
+			title: string;
+			year: number | null;
+			mediaType: string;
+			season: number | null;
+			discNumber: number | null;
+			genres: string | null;
+			barcodeUpc: string | null;
+		}[],
 		alreadyOwned: boolean
 	) {
 		if (!sessionLoggingEnabled) return;
