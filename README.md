@@ -17,7 +17,6 @@ A self-hosted tracker for migrating a physical DVD/Blu-ray collection onto a [Je
   </tr>
 </table>
 
-
 ## How it works
 
 1. Scan a disc's barcode (a USB HID 2D scanner works out of the box — it types the digits like a keyboard, no driver needed).
