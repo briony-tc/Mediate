@@ -2,6 +2,22 @@
 
 A self-hosted tracker for migrating a physical DVD/Blu-ray collection onto a [Jellyfin](https://jellyfin.org/) server: scan a disc's barcode, confirm the title, and watch its status move from _not started_ to _staged_ to _complete_ as it gets ripped and filed — no manual bookkeeping in a spreadsheet.
 
+<table>
+  <tr>
+    <td><img src="docs/screenshots/Collections_light.png" width="400" /></td>
+    <td><img src="docs/screenshots/Collections_list_light.png" width="400" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/Scan_light.png" width="400" /></td>
+    <td><img src="docs/screenshots/Scan_search.png" width="400" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/Rip-queue_light.png"/></td>
+    <td><img src="docs/screenshots/Collections_dark-mode.png"/></td>
+  </tr>
+</table>
+
+
 ## How it works
 
 1. Scan a disc's barcode (a USB HID 2D scanner works out of the box — it types the digits like a keyboard, no driver needed).
