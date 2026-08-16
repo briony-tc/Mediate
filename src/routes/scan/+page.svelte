@@ -1,5 +1,6 @@
 <script lang="ts">
 	import BarcodeScanner from '$lib/components/BarcodeScanner.svelte';
+	import { sessionEntriesToCsv, type ScanSessionEntry } from '$lib/csv';
 	import type { Ownership } from '$lib/types';
 
 	type Candidate = { id: number; name: string; type: string; year?: number; imdbId?: string };
@@ -49,6 +50,50 @@
 	// without the list disappearing after the first - it only clears when a
 	// new scan or search starts (see handleScan/handleManualSearch).
 	let addedEntries = $state<{ id: number; season: number | null }[]>([]);
+
+	// Opt-in session logging - when on, every confirmed candidate (new disc or
+	// already-tracked dupe) is logged to sessionEntries regardless of outcome,
+	// so a whole scanning session can be exported as a CSV report showing which
+	// titles are new to your collection vs. already owned. Purely
+	// client-side/in-memory (lost on refresh) - same tradeoff as the
+	// rip-progress log, not worth a DB table for a one-off report.
+	let sessionLoggingEnabled = $state(false);
+	let sessionEntries = $state<ScanSessionEntry[]>([]);
+
+	function logSessionEntries(
+		discs: { title: string; year: number | null; mediaType: string; season: number | null; discNumber: number | null; genres: string | null; barcodeUpc: string | null }[],
+		alreadyOwned: boolean
+	) {
+		if (!sessionLoggingEnabled) return;
+		sessionEntries = [
+			...sessionEntries,
+			...discs.map((d) => ({
+				title: d.title,
+				year: d.year,
+				mediaType: d.mediaType === 'tv' ? ('tv' as const) : ('movie' as const),
+				season: d.season,
+				discNumber: d.discNumber,
+				genres: d.genres,
+				barcodeUpc: d.barcodeUpc,
+				alreadyOwned
+			}))
+		];
+	}
+
+	function downloadSessionCsv() {
+		const csv = sessionEntriesToCsv(sessionEntries);
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `scan-session-${new Date().toISOString().slice(0, 10)}.csv`;
+		link.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function clearSession() {
+		sessionEntries = [];
+	}
 
 	function isTv(candidate: Candidate) {
 		return candidate.type !== 'movie' && candidate.type !== 'short_film';
@@ -243,6 +288,7 @@
 			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
 			discConflict = { candidate, season };
 			discNumberInput = 2;
+			logSessionEntries([data.disc], true);
 			clearPendingAdd();
 			return;
 		}
@@ -257,8 +303,15 @@
 			data.disc.ownership && data.disc.ownership !== 'owned'
 				? ` (${data.disc.ownership === 'wanted' ? 'wanted' : 'digital only'})`
 				: '';
-		const createdDiscs: { title: string; season: number | null; discNumber: number | null }[] =
-			data.discs ?? [data.disc];
+		const createdDiscs: {
+			title: string;
+			year: number | null;
+			mediaType: string;
+			season: number | null;
+			discNumber: number | null;
+			genres: string | null;
+			barcodeUpc: string | null;
+		}[] = data.discs ?? [data.disc];
 		if (createdDiscs.length > 1) {
 			const seasonLabel = season ? ` season ${season}` : '';
 			message = `Added "${createdDiscs[0].title}"${seasonLabel} as ${createdDiscs.length} discs (Not started)${ownershipSuffix}.`;
@@ -268,6 +321,7 @@
 		}
 		status = 'idle';
 		addedEntries = [...addedEntries, { id: candidate.id, season }];
+		logSessionEntries(createdDiscs, false);
 		discConflict = null;
 		discCountInputs = { ...discCountInputs, [candidate.id]: undefined };
 		ownershipInputs = { ...ownershipInputs, [candidate.id]: 'owned' };
@@ -289,6 +343,27 @@
 <div class="mx-auto max-w-xl space-y-6 p-6">
 	<h1 class="text-2xl font-semibold">Scan a disc</h1>
 	<p class="text-sm text-gray-500">Point the scanner at the barcode — this page is listening.</p>
+
+	<label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+		<input type="checkbox" bind:checked={sessionLoggingEnabled} />
+		Log this session for CSV export (e.g. cataloging a batch of discs)
+	</label>
+
+	{#if sessionLoggingEnabled && sessionEntries.length > 0}
+		<div class="flex items-center gap-3 rounded-md border p-3 text-sm">
+			<span>{sessionEntries.length} disc{sessionEntries.length === 1 ? '' : 's'} logged</span>
+			<button
+				type="button"
+				class="ml-auto rounded-md border px-3 py-1 font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+				onclick={downloadSessionCsv}
+			>
+				Download CSV
+			</button>
+			<button type="button" class="rounded-md border px-3 py-1" onclick={clearSession}>
+				Clear
+			</button>
+		</div>
+	{/if}
 
 	<form class="flex gap-2" onsubmit={handleManualSearch}>
 		<input

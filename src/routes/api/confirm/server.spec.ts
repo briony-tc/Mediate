@@ -243,6 +243,34 @@ describe('POST /api/confirm', () => {
 		expect(data.discs.every((d: { ownership: string }) => d.ownership === 'wanted')).toBe(true);
 	});
 
+	it('stores a null discNumber (not 0) when the client explicitly sends discNumber: null', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 1,
+			title: 'Inception',
+			type: 'movie',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 1, discNumber: null }));
+		const data = await response.json();
+
+		expect(data.disc.discNumber).toBeNull();
+	});
+
+	it('stores a null season (not 0) when the client explicitly sends season: null for a TV series', async () => {
+		getTitleDetails.mockResolvedValue({
+			id: 2,
+			title: 'Breaking Bad',
+			type: 'tv_series',
+			genreNames: []
+		});
+
+		const response = await POST(makeRequest({ watchmodeId: 2, season: null }));
+		const data = await response.json();
+
+		expect(data.disc.season).toBeNull();
+	});
+
 	it('ignores a season value sent for a movie', async () => {
 		getTitleDetails.mockResolvedValue({
 			id: 1,

@@ -15,9 +15,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const barcode: string | null = typeof body?.barcode === 'string' ? body.barcode : null;
 	const rawLookupTitle: string | null =
 		typeof body?.rawLookupTitle === 'string' ? body.rawLookupTitle : null;
-	const seasonInput = Number(body?.season);
+	// `Number(null)` is 0, not NaN - since the client explicitly sends `null`
+	// for "not provided" (rather than omitting the key), that footgun would
+	// otherwise store a real 0 instead of leaving these unset.
+	const seasonInput = body?.season == null ? NaN : Number(body.season);
 	const requestedSeason = Number.isFinite(seasonInput) ? seasonInput : null;
-	const discNumberInput = Number(body?.discNumber);
+	const discNumberInput = body?.discNumber == null ? NaN : Number(body.discNumber);
 	const requestedDiscNumber = Number.isFinite(discNumberInput) ? discNumberInput : null;
 	// Lets the whole set be documented in one submission (e.g. "this is a
 	// 3-disc set") instead of adding disc 1, then reactively adding 2 and 3
