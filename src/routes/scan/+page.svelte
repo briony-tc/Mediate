@@ -1,7 +1,10 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import BarcodeScanner from '$lib/components/BarcodeScanner.svelte';
 	import { sessionEntriesToCsv, type ScanSessionEntry } from '$lib/csv';
 	import type { Ownership } from '$lib/types';
+
+	const SESSION_STORAGE_KEY = 'mediate:scan-session';
 
 	type Candidate = { id: number; name: string; type: string; year?: number; imdbId?: string };
 
@@ -54,11 +57,33 @@
 	// Opt-in session logging - when on, every confirmed candidate (new disc or
 	// already-tracked dupe) is logged to sessionEntries regardless of outcome,
 	// so a whole scanning session can be exported as a CSV report showing which
-	// titles are new to your collection vs. already owned. Purely
-	// client-side/in-memory (lost on refresh) - same tradeoff as the
-	// rip-progress log, not worth a DB table for a one-off report.
+	// titles are new to your collection vs. already owned. Persisted to
+	// localStorage (not a DB table - this is a client-side scratch log, not
+	// data the server needs to know about) specifically so a page refresh -
+	// needed occasionally to recover from an unrelated stuck-focus state -
+	// doesn't wipe out a real scanning session's worth of logged discs.
 	let sessionLoggingEnabled = $state(false);
 	let sessionEntries = $state<ScanSessionEntry[]>([]);
+
+	onMount(() => {
+		const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+		if (!stored) return;
+		try {
+			const parsed = JSON.parse(stored) as { enabled?: boolean; entries?: ScanSessionEntry[] };
+			sessionLoggingEnabled = parsed.enabled ?? false;
+			sessionEntries = parsed.entries ?? [];
+		} catch {
+			// Malformed/foreign localStorage value - ignore and start fresh
+			// rather than crash the page over a scratch log.
+		}
+	});
+
+	$effect(() => {
+		localStorage.setItem(
+			SESSION_STORAGE_KEY,
+			JSON.stringify({ enabled: sessionLoggingEnabled, entries: sessionEntries })
+		);
+	});
 
 	function logSessionEntries(
 		discs: { title: string; year: number | null; mediaType: string; season: number | null; discNumber: number | null; genres: string | null; barcodeUpc: string | null }[],
@@ -130,6 +155,7 @@
 		previewUrls = {};
 		previewLoading = {};
 		addedEntries = [];
+		message = 'Scan a barcode to get started.';
 		focusSignal += 1;
 	}
 
@@ -171,6 +197,11 @@
 		rawLookupTitle = null;
 		candidates = [];
 		pendingCandidate = null;
+		// Without this, a leftover "is this another disc of the same title?"
+		// panel from a previous scan's 409 stays on screen and hides the new
+		// results, even though this scan's own candidates did come back
+		// correctly - looks exactly like "scanning did nothing".
+		discConflict = null;
 		addedEntries = [];
 
 		const { response, data } = await postJson('/api/scan', { barcode });
@@ -207,6 +238,7 @@
 		currentBarcode = null;
 		rawLookupTitle = manualQuery;
 		pendingCandidate = null;
+		discConflict = null;
 		addedEntries = [];
 
 		const { response, data } = await postJson('/api/search', { query: manualQuery });
@@ -389,7 +421,16 @@
 		</button>
 	</form>
 
-	<p class="rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">{message}</p>
+	<div class="flex items-center gap-3">
+		<p class="flex-1 rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">{message}</p>
+		<button
+			type="button"
+			class="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+			onclick={resetFlow}
+		>
+			Reset
+		</button>
+	</div>
 
 	{#if pendingCandidate}
 		<div class="space-y-2 rounded-md border p-3">
