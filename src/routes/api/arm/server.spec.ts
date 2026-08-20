@@ -44,6 +44,13 @@ describe('POST /api/arm', () => {
 		expect(response.status).toBe(409);
 	});
 
+	it('returns 409 when the disc is not owned (wanted/digital_only have no physical copy)', async () => {
+		const disc = makeDisc({ status: 'not_started', ownership: 'wanted' });
+		const response = await POST(makeRequest({ discId: disc.id }));
+		expect(response.status).toBe(409);
+		expect(testDb.select().from(discs).all()[0].armedAt).toBeNull();
+	});
+
 	it('arms a not_started disc', async () => {
 		const disc = makeDisc({ status: 'not_started' });
 

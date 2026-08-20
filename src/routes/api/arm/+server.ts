@@ -25,6 +25,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (disc.status !== 'not_started') {
 		return json({ error: 'only a not_started disc can be armed' }, { status: 409 });
 	}
+	if (disc.ownership !== 'owned') {
+		return json(
+			{ error: 'only an owned disc can be armed - it has no physical copy to rip' },
+			{
+				status: 409
+			}
+		);
+	}
 
 	db.update(discs)
 		.set({ armedAt: null })
