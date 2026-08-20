@@ -55,6 +55,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ outcome: 'needs_attention', discId: disc.id });
 	}
 
+	// Should be rare: onFileSeen's armed fast-path links unconditionally with
+	// no folder-name matching required, so a disc being armed at the time this
+	// fires should virtually always end up 'promoted' or 'needs_attention'
+	// above, never here. If it does land here, that's worth a loud trace -
+	// this exact case (armed disc, rip completed, still unmatched) happened
+	// in production on 2026-08-20 with zero diagnostic trail anywhere.
+	console.warn(
+		`[rip-complete] "${stagingFolderName}" (${absolutePath}) finished ripping but no disc ` +
+			'claimed it via onFileSeen - falling through to needs_review.'
+	);
 	await notifyAll('Rip complete', `"${stagingFolderName}" ripped - needs manual match.`);
 	return json({ outcome: 'needs_review' });
 };

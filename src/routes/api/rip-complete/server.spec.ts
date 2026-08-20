@@ -162,4 +162,33 @@ describe('POST /api/rip-complete', () => {
 			.find((d) => d.id === disc.id);
 		expect(updated?.status).toBe('staged');
 	});
+
+	it('promotes an armed disc via the webhook, regardless of folder-name matching', async () => {
+		const [disc] = testDb
+			.insert(discs)
+			.values({
+				title: 'Criminal Minds',
+				mediaType: 'tv',
+				season: 3,
+				watchmodeId: 1,
+				status: 'not_started',
+				armedAt: Date.now()
+			})
+			.returning()
+			.all();
+		mkdirSync(join(stagingRoot, 'CRIMINAL_MINDS'));
+		writeFileSync(join(stagingRoot, 'CRIMINAL_MINDS', 'title_t00.mkv'), 'x');
+
+		const response = await POST(makeRequest({ stagingFolderName: 'CRIMINAL_MINDS' }));
+		const data = await response.json();
+
+		expect(data.outcome).toBe('promoted');
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(updated?.status).toBe('complete');
+		expect(updated?.armedAt).toBeNull();
+	});
 });
