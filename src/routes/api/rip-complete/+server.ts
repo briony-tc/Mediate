@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { discs } from '$lib/server/db/schema';
@@ -34,15 +34,23 @@ export const POST: RequestHandler = async ({ request }) => {
 	// every other staging folder - see reconcile.ts.
 	onFileSeen(absolutePath, stagingFolderName, 'staging');
 
-	const disc = db.select().from(discs).where(eq(discs.stagedPath, absolutePath)).get();
-
 	// 'staged' is included alongside 'ripping': a disc can end up linked to
 	// this exact staging path via manual "Needs attention" resolution (see
 	// api/link) while the rip is still running, in which case it's 'staged'
 	// (not 'ripping') by the time this webhook fires - it's just as safe to
 	// promote, since stagedPath matching this absolutePath is what actually
 	// confirms it's the right disc, not the status value itself.
-	if (disc && (disc.status === 'ripping' || disc.status === 'staged')) {
+	// Scoped to these two statuses in the query itself, not just checked
+	// after - MakeMKV can reuse an old, already-complete disc's staging folder
+	// name (identical volume label), so matching on stagedPath alone could
+	// pick that stale disc instead of the one actually in the pipeline.
+	const disc = db
+		.select()
+		.from(discs)
+		.where(and(eq(discs.stagedPath, absolutePath), inArray(discs.status, ['ripping', 'staged'])))
+		.get();
+
+	if (disc) {
 		const result = promoteToJellyfin(disc, absolutePath);
 		if (result === 'promoted') {
 			await notifyAll('Rip complete', `${disc.title} filed into Jellyfin.`);
@@ -58,9 +66,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Should be rare: onFileSeen's armed fast-path links unconditionally with
 	// no folder-name matching required, so a disc being armed at the time this
 	// fires should virtually always end up 'promoted' or 'needs_attention'
-	// above, never here. If it does land here, that's worth a loud trace -
-	// this exact case (armed disc, rip completed, still unmatched) happened
-	// in production on 2026-08-20 with zero diagnostic trail anywhere.
+	// above, never here. If it does land here, that's worth a loud trace - two
+	// concrete causes have already been found and fixed this way: an armed
+	// disc going unmatched with zero diagnostic trail (2026-08-20), and a
+	// reused MakeMKV folder name (two different discs sharing a volume label)
+	// silently blocking the armed fast-path via onFileSeen's alreadyLinked
+	// check (2026-08-21).
 	console.warn(
 		`[rip-complete] "${stagingFolderName}" (${absolutePath}) finished ripping but no disc ` +
 			'claimed it via onFileSeen - falling through to needs_review.'

@@ -191,4 +191,44 @@ describe('POST /api/rip-complete', () => {
 		expect(updated?.status).toBe('complete');
 		expect(updated?.armedAt).toBeNull();
 	});
+
+	it('promotes an armed disc even when an old, already-complete disc has the exact same stagedPath (reused MakeMKV volume label)', async () => {
+		// e.g. two different physical Blu-rays both burned with the volume label
+		// "CAPTAIN_AMERICA" - the old disc's stagedPath is never cleared after
+		// promotion, so it must not shadow a brand new disc claiming that same
+		// staging folder.
+		const [oldDisc] = testDb
+			.insert(discs)
+			.values({
+				title: 'Captain America: The Winter Soldier',
+				mediaType: 'movie',
+				watchmodeId: 1,
+				status: 'complete',
+				stagedPath: join(stagingRoot, 'CAPTAIN_AMERICA')
+			})
+			.returning()
+			.all();
+		const [newDisc] = testDb
+			.insert(discs)
+			.values({
+				title: 'Captain America: The First Avenger',
+				mediaType: 'movie',
+				watchmodeId: 2,
+				status: 'not_started',
+				armedAt: Date.now()
+			})
+			.returning()
+			.all();
+		mkdirSync(join(stagingRoot, 'CAPTAIN_AMERICA'));
+		writeFileSync(join(stagingRoot, 'CAPTAIN_AMERICA', 'title_t00.mkv'), 'x');
+
+		const response = await POST(makeRequest({ stagingFolderName: 'CAPTAIN_AMERICA' }));
+		const data = await response.json();
+
+		expect(data.outcome).toBe('promoted');
+		expect(data.discId).toBe(newDisc.id);
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === newDisc.id)?.status).toBe('complete');
+		expect(rows.find((d) => d.id === oldDisc.id)?.status).toBe('complete');
+	});
 });

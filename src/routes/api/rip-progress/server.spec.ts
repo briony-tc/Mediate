@@ -131,4 +131,27 @@ describe('POST /api/rip-progress', () => {
 			.find((d) => d.id === disc.id);
 		expect(updated?.ripTitlesCompleted).toBeNull();
 	});
+
+	it('updates the actively-ripping disc, not an old complete disc that reused the same staging path (same MakeMKV volume label)', async () => {
+		const oldDisc = seedDisc({
+			title: 'Captain America: The Winter Soldier',
+			status: 'complete',
+			stagedPath: join(stagingRoot, 'CAPTAIN_AMERICA')
+		});
+		const activeDisc = seedDisc({
+			title: 'Captain America: The First Avenger',
+			status: 'ripping',
+			stagedPath: join(stagingRoot, 'CAPTAIN_AMERICA')
+		});
+
+		const response = await POST(
+			makeRequest({ stagingFolderName: 'CAPTAIN_AMERICA', titlesCompleted: 2, titlesTotal: 5 })
+		);
+		const data = await response.json();
+
+		expect(data.outcome).toBe('updated');
+		const rows = testDb.select().from(discs).all();
+		expect(rows.find((d) => d.id === activeDisc.id)?.ripTitlesCompleted).toBe(2);
+		expect(rows.find((d) => d.id === oldDisc.id)?.ripTitlesCompleted).toBeNull();
+	});
 });

@@ -277,6 +277,33 @@ describe('onFileSeen - staging tree (flat MakeMKV output)', () => {
 				.find((d) => d.id === disc.id);
 			expect(updated?.status).toBe('ripping');
 		});
+
+		it('links an armed disc even when an old, already-complete disc has the exact same stagedPath (reused MakeMKV volume label)', () => {
+			// e.g. two different physical Blu-rays both burned as "CAPTAIN_AMERICA" -
+			// MakeMKV names the staging folder after the disc's own volume label, so
+			// a brand new rip can land in a path string a previous, unrelated disc
+			// already finished at. The old disc's stagedPath is never cleared after
+			// promotion, so it must not be mistaken for "this path is already
+			// spoken for" when a new disc claims it.
+			const oldDisc = seedDisc({
+				title: 'Captain America: The Winter Soldier',
+				status: 'complete',
+				stagedPath: '/staging/CAPTAIN_AMERICA'
+			});
+			const armed = seedDisc({
+				title: 'Captain America: The First Avenger',
+				status: 'not_started',
+				armedAt: Date.now()
+			});
+
+			onFileSeen('/staging/CAPTAIN_AMERICA', 'CAPTAIN_AMERICA', 'staging');
+
+			const rows = testDb.select().from(discs).all();
+			expect(rows.find((d) => d.id === armed.id)?.status).toBe('ripping');
+			expect(rows.find((d) => d.id === armed.id)?.stagedPath).toBe('/staging/CAPTAIN_AMERICA');
+			expect(rows.find((d) => d.id === armed.id)?.armedAt).toBeNull();
+			expect(rows.find((d) => d.id === oldDisc.id)?.status).toBe('complete');
+		});
 	});
 });
 
