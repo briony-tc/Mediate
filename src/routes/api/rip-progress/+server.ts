@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { discs } from '$lib/server/db/schema';
@@ -41,9 +41,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const absolutePath = join(serverEnv.STAGING_PATH, stagingFolderName);
-	const disc = db.select().from(discs).where(eq(discs.stagedPath, absolutePath)).get();
+	// Scoped to status='ripping' in the query itself, not just checked after -
+	// MakeMKV can reuse an old, already-complete disc's staging folder name
+	// (identical volume label), so matching on stagedPath alone could pick that
+	// stale disc instead of the one actually ripping right now.
+	const disc = db
+		.select()
+		.from(discs)
+		.where(and(eq(discs.stagedPath, absolutePath), eq(discs.status, 'ripping')))
+		.get();
 
-	if (!disc || disc.status !== 'ripping') {
+	if (!disc) {
 		return json({ outcome: 'ignored' });
 	}
 

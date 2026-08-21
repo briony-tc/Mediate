@@ -1,5 +1,5 @@
 import { sep } from 'node:path';
-import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { db } from '../db';
 import { discs, unmatchedFiles } from '../db/schema';
 import { AUTO_MATCH_THRESHOLD, SUGGEST_THRESHOLD, findBestDiscMatch } from '../matching/match';
@@ -183,11 +183,21 @@ function resolveUnmatched(existing: typeof unmatchedFiles.$inferSelect | undefin
  * would leave it stuck forever even after a fix or a later scan.
  */
 export function onFileSeen(absolutePath: string, relativePath: string, tree: Tree) {
+	// MakeMKV names a staging folder after the disc's own volume label, and two
+	// different physical discs can share the exact same label (e.g. two
+	// Blu-rays both burned as "CAPTAIN_AMERICA") - so a completed disc's old
+	// stagedPath can collide with a brand new rip's folder. Excluding
+	// 'complete' here means a stale historical stagedPath on a finished disc
+	// can never block a new disc from claiming that same path - only a disc
+	// still actually mid-pipeline (ripping/staged) at that path counts as
+	// "already linked" for idempotency purposes.
 	const alreadyLinked = db
 		.select()
 		.from(discs)
 		.where(
-			tree === 'staging' ? eq(discs.stagedPath, absolutePath) : eq(discs.completePath, absolutePath)
+			tree === 'staging'
+				? and(eq(discs.stagedPath, absolutePath), ne(discs.status, 'complete'))
+				: eq(discs.completePath, absolutePath)
 		)
 		.get();
 	if (alreadyLinked) return;
