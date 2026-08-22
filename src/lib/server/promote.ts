@@ -10,9 +10,10 @@ import {
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
-import { discs, type Disc } from './db/schema';
+import { discs, unmatchedFiles, type Disc } from './db/schema';
 import { serverEnv } from './env';
 import { emit } from './events';
+import { logPipelineEvent } from './pipelineEvents';
 
 export type PromoteResult = 'promoted' | 'needs_attention';
 
@@ -55,6 +56,29 @@ function highestExistingEpisode(destDir: string, season: number): number {
 		if (match) max = Math.max(max, Number(match[1]));
 	}
 	return max;
+}
+
+/**
+ * auto-rip.sh's own title-length filter (>= 10 minutes) is deliberately
+ * inclusive - a movie disc can have long, legitimate bonus content worth
+ * keeping (see the comment above it), so it can't just raise its own
+ * threshold without also excluding real bonus features. But a real TV
+ * season's episodes are normally close to uniform length, so a ripped title
+ * dramatically smaller than the rest of the same disc's batch (e.g. a
+ * ~12min "next time on" reel bundled alongside four ~40min episodes) is far
+ * more likely bonus content that slipped past that filter than a genuine
+ * short episode - unlike movies, TV numbering has no "extras" bucket to put
+ * it in, so left unguarded it silently becomes a phantom episode instead.
+ * Needs at least 3 files for "smaller than the rest" to mean anything -
+ * with fewer, there's too little signal to safely flag anything.
+ */
+function findSizeOutlier(dir: string, names: string[]): string | null {
+	if (names.length < 3) return null;
+	const sizes = names
+		.map((name) => ({ name, size: statSync(join(dir, name)).size }))
+		.sort((a, b) => a.size - b.size);
+	const median = sizes[Math.floor(sizes.length / 2)].size;
+	return sizes[0].size < median * 0.5 ? sizes[0].name : null;
 }
 
 /**
@@ -166,6 +190,10 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 
 			const destDir = join(serverEnv.JELLYFIN_PATH, 'tv', safeTitle, `Season ${season}`);
 			mkdirSync(destDir, { recursive: true });
+
+			const outlierName = findSizeOutlier(stagingFolderAbsolutePath, files);
+			const episodeFiles = outlierName ? files.filter((name) => name !== outlierName) : files;
+
 			// Numbered in disc/track order, continuing from whatever episode
 			// numbers already exist in this season's folder - so a season split
 			// across multiple discs keeps counting up instead of restarting at
@@ -173,13 +201,28 @@ export function promoteToJellyfin(disc: Disc, stagingFolderAbsolutePath: string)
 			// warns before arming a later disc while an earlier one isn't
 			// complete yet) - this only looks at what's on disk, not discNumber.
 			const startingEpisode = highestExistingEpisode(destDir, season) + 1;
-			files.forEach((name, index) => {
+			episodeFiles.forEach((name, index) => {
 				moveFile(
 					join(stagingFolderAbsolutePath, name),
 					join(destDir, episodeFileName(safeTitle, season, startingEpisode + index))
 				);
 			});
 			completePath = destDir;
+
+			if (outlierName) {
+				// Left behind in staging (not moved, not numbered as an episode) -
+				// surfaces in the existing "Needs attention" list for a human to
+				// look at, same as any other unmatched staging file, rather than
+				// guessing whether it's disposable.
+				const outlierPath = join(stagingFolderAbsolutePath, outlierName);
+				db.insert(unmatchedFiles).values({ path: outlierPath, tree: 'staging' }).run();
+				logPipelineEvent(
+					'tv_bonus_content_excluded',
+					`"${outlierName}" from ${disc.title} looked like bonus content (much shorter than ` +
+						`the rest of the batch) - held out of episode numbering, left in Needs Attention ` +
+						`at ${outlierPath}.`
+				);
+			}
 		}
 
 		removeIfEmpty(stagingFolderAbsolutePath);

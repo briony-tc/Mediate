@@ -1,4 +1,4 @@
-import type { Disc, DiscStatus, Ownership } from '$lib/types';
+import type { Disc, DiscStatus, Ownership, PipelineEventKind } from '$lib/types';
 
 export type SortKey = 'updated' | 'title' | 'year' | 'status';
 export type MediaTypeFilter = 'all' | 'movie' | 'tv';
@@ -34,6 +34,32 @@ export const ownershipLabel: Record<Ownership, string> = {
 	wanted: 'Wanted',
 	digital_only: 'Digital only'
 };
+
+export const pipelineEventLabel: Record<PipelineEventKind, string> = {
+	rip_needs_review: "Rip finished but couldn't be matched to any disc",
+	staging_path_misconfigured: 'Staging path misconfigured',
+	jellyfin_path_misconfigured: 'Jellyfin path misconfigured',
+	tv_bonus_content_excluded: 'Possible bonus content excluded from episode numbering'
+};
+
+// A single-title feature-length rip can legitimately go 1-2+ hours between
+// the "started ripping" transition and /api/rip-complete, with zero
+// /api/rip-progress pings in between - auto-rip.sh only pings at title-loop
+// boundaries (see rip-progress/+server.ts). This threshold is deliberately
+// generous and purely informational - it never auto-triggers a reset, unlike
+// the much shorter RIPPING_RESET_SAFETY_WINDOW_MS in api/unlink/+server.ts,
+// which only cares whether a file handle is open *right now*, not whether an
+// hours-long rip is progressing normally.
+export const STALE_RIP_THRESHOLD_MS = 3 * 60 * 60 * 1000;
+
+export function isStaleRip(disc: Disc, now: number): boolean {
+	return disc.status === 'ripping' && now - disc.updatedAt > STALE_RIP_THRESHOLD_MS;
+}
+
+export function formatStaleDuration(ms: number): string {
+	const hours = Math.floor(ms / 3_600_000);
+	return hours >= 1 ? `${hours}h+` : `${Math.floor(ms / 60_000)}m+`;
+}
 
 export function filterDiscs(
 	discs: Disc[],

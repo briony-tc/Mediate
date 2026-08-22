@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from '../db/client';
-import { discs, unmatchedFiles } from '../db/schema';
+import { discs, pipelineEvents, unmatchedFiles } from '../db/schema';
 
 const testDb = createDb(':memory:');
 migrate(testDb, { migrationsFolder: 'drizzle' });
@@ -54,6 +54,7 @@ afterEach(async () => {
 	rmSync(jellyfinRoot, { recursive: true, force: true });
 	testDb.delete(unmatchedFiles).run();
 	testDb.delete(discs).run();
+	testDb.delete(pipelineEvents).run();
 });
 
 describe('watcher', () => {
@@ -162,6 +163,10 @@ describe('watcher', () => {
 
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('JELLYFIN_PATH'));
 		warnSpy.mockRestore();
+
+		const events = testDb.select().from(pipelineEvents).all();
+		expect(events).toHaveLength(1);
+		expect(events[0].kind).toBe('jellyfin_path_misconfigured');
 	});
 
 	it('warns when STAGING_PATH does not exist or is empty', () => {
@@ -172,6 +177,10 @@ describe('watcher', () => {
 
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('STAGING_PATH'));
 		warnSpy.mockRestore();
+
+		const events = testDb.select().from(pipelineEvents).all();
+		expect(events).toHaveLength(1);
+		expect(events[0].kind).toBe('staging_path_misconfigured');
 	});
 
 	it('does not warn when the configured roots are structured correctly', () => {
@@ -181,6 +190,7 @@ describe('watcher', () => {
 
 		expect(warnSpy).not.toHaveBeenCalled();
 		warnSpy.mockRestore();
+		expect(testDb.select().from(pipelineEvents).all()).toHaveLength(0);
 	});
 
 	it('detects a TV season folder in jellyfin and links only the matching season', async () => {

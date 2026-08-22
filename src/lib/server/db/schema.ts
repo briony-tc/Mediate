@@ -99,6 +99,36 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
 		.$defaultFn(() => Date.now())
 });
 
+export const pipelineEvents = sqliteTable('pipeline_events', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	// Closed enum (like scanEvents.outcome) so the UI can render a fixed set
+	// of known labels instead of guessing at arbitrary strings. Only add a
+	// new kind when a *new* console.warn-worthy site is promoted to a
+	// persisted event - see rip-complete/+server.ts's needs_review fallback,
+	// watcher.ts's two misconfiguration warnings, and promote.ts's
+	// tv_bonus_content_excluded (a ripped title held back from episode
+	// numbering for looking like bonus content, not a real episode).
+	kind: text('kind', {
+		enum: [
+			'rip_needs_review',
+			'staging_path_misconfigured',
+			'jellyfin_path_misconfigured',
+			'tv_bonus_content_excluded'
+		]
+	}).notNull(),
+	message: text('message').notNull(),
+	createdAt: integer('created_at')
+		.notNull()
+		.$defaultFn(() => Date.now()),
+	// Soft-dismiss (mirrors unmatchedFiles.resolution) rather than a hard
+	// delete - keeps a short audit trail instead of losing the record the
+	// moment someone clicks past it. No discId column: every event kind
+	// captured so far is definitionally not resolvable to one disc (that's
+	// the whole problem with rip_needs_review, and the misconfiguration
+	// warnings are boot-time, disc-less).
+	dismissedAt: integer('dismissed_at')
+});
+
 export type Disc = typeof discs.$inferSelect;
 export type NewDisc = typeof discs.$inferInsert;
 export type UnmatchedFile = typeof unmatchedFiles.$inferSelect;
@@ -107,3 +137,5 @@ export type ScanEvent = typeof scanEvents.$inferSelect;
 export type NewScanEvent = typeof scanEvents.$inferInsert;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
+export type PipelineEvent = typeof pipelineEvents.$inferSelect;
+export type NewPipelineEvent = typeof pipelineEvents.$inferInsert;

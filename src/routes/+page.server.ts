@@ -1,7 +1,7 @@
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { discs, unmatchedFiles } from '$lib/server/db/schema';
+import { discs, pipelineEvents, unmatchedFiles } from '$lib/server/db/schema';
 import { serverEnv } from '$lib/server/env';
 
 // This is the Rip Queue page - only discs that still need pipeline action
@@ -24,10 +24,18 @@ export const load: PageServerLoad = async () => {
 		.where(eq(unmatchedFiles.resolution, 'unresolved'))
 		.orderBy(desc(unmatchedFiles.detectedAt))
 		.all();
+	const recentIssues = db
+		.select()
+		.from(pipelineEvents)
+		.where(isNull(pipelineEvents.dismissedAt))
+		.orderBy(desc(pipelineEvents.createdAt))
+		.limit(20)
+		.all();
 
 	return {
 		discs: allDiscs,
 		unmatchedFiles: needsAttention,
+		pipelineEvents: recentIssues,
 		// Public by design - the VAPID public key is meant to be handed to the
 		// browser's Push API, unlike VAPID_PRIVATE_KEY.
 		vapidPublicKey: serverEnv.VAPID_PUBLIC_KEY

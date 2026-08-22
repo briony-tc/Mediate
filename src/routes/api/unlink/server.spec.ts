@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from '$lib/server/db/client';
@@ -23,9 +26,15 @@ function makeDisc(overrides: Partial<typeof discs.$inferInsert> = {}) {
 	return disc;
 }
 
+let tmpRoot: string | undefined;
+
 afterEach(() => {
 	testDb.delete(unmatchedFiles).run();
 	testDb.delete(discs).run();
+	if (tmpRoot) {
+		rmSync(tmpRoot, { recursive: true, force: true });
+		tmpRoot = undefined;
+	}
 });
 
 describe('POST /api/unlink', () => {
@@ -45,10 +54,62 @@ describe('POST /api/unlink', () => {
 		expect(response.status).toBe(409);
 	});
 
-	it('returns 409 for a ripping disc', async () => {
+	it('resets a ripping disc with no stagedPath back to not_started', async () => {
 		const disc = makeDisc({ status: 'ripping' });
 		const response = await POST(makeRequest({ discId: disc.id }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.disc.status).toBe('not_started');
+	});
+
+	it('resets a ripping disc back to not_started when its staging folder no longer exists on disk', async () => {
+		const disc = makeDisc({
+			status: 'ripping',
+			stagedPath: join(tmpdir(), 'mls-unlink-does-not-exist-' + Date.now())
+		});
+		const response = await POST(makeRequest({ discId: disc.id }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.disc.status).toBe('not_started');
+	});
+
+	it('resets a ripping disc back to not_started when its staging folder has not been touched recently', async () => {
+		tmpRoot = mkdtempSync(join(tmpdir(), 'mls-unlink-'));
+		const stagedPath = join(tmpRoot, 'CAPTAIN_AMERICA');
+		mkdirSync(stagedPath);
+		const filePath = join(stagedPath, 'title_t00.mkv');
+		writeFileSync(filePath, 'x');
+		const old = new Date(Date.now() - 20 * 60 * 1000);
+		utimesSync(filePath, old, old);
+		utimesSync(stagedPath, old, old);
+
+		const disc = makeDisc({ status: 'ripping', stagedPath });
+		const response = await POST(makeRequest({ discId: disc.id }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.disc.status).toBe('not_started');
+		expect(data.disc.stagedPath).toBeNull();
+	});
+
+	it("returns 409 and does not reset when the ripping disc's staging folder was modified within the safety window", async () => {
+		tmpRoot = mkdtempSync(join(tmpdir(), 'mls-unlink-'));
+		const stagedPath = join(tmpRoot, 'CAPTAIN_AMERICA');
+		mkdirSync(stagedPath);
+		writeFileSync(join(stagedPath, 'title_t00.mkv'), 'x'); // fresh mtime = now
+
+		const disc = makeDisc({ status: 'ripping', stagedPath });
+		const response = await POST(makeRequest({ discId: disc.id }));
+
 		expect(response.status).toBe(409);
+		const row = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === disc.id);
+		expect(row?.status).toBe('ripping');
 	});
 
 	it('resets a complete disc back to not_started and reverts its linked unmatched file', async () => {
