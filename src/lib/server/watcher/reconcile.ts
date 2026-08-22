@@ -1,9 +1,10 @@
-import { sep } from 'node:path';
+import { relative, sep } from 'node:path';
 import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { db } from '../db';
 import { discs, unmatchedFiles } from '../db/schema';
 import { AUTO_MATCH_THRESHOLD, SUGGEST_THRESHOLD, findBestDiscMatch } from '../matching/match';
 import { emit } from '../events';
+import { serverEnv } from '../env';
 
 export type Tree = 'staging' | 'jellyfin';
 
@@ -288,4 +289,29 @@ export function onFileSeen(absolutePath: string, relativePath: string, tree: Tre
 	}
 
 	recordUnmatched(absolutePath, tree, existingUnmatched, match);
+}
+
+/**
+ * Re-checks every still-unresolved staging entry - meant to be called right
+ * after a disc gets armed via /api/arm. A staging folder can be created (and
+ * recorded unresolved) before the disc it belongs to even exists in the DB
+ * yet - e.g. a first rip attempt for a disc nobody had added/armed. The
+ * passive watcher only ever fires 'addDir' once per path (chokidar doesn't
+ * repeat it for a directory that's already known to exist), so arming the
+ * disc afterward does nothing on its own - the folder would otherwise sit
+ * unmatched until a container restart's baseline rescan or the rip finishing
+ * (rip-complete's own onFileSeen call) happens to notice it again, meaning
+ * zero live progress in the UI for the entire rip in between. onFileSeen
+ * itself already handles "retry a still-unresolved path" correctly - this
+ * just gives arming a reason to actually call it.
+ */
+export function recheckUnresolvedStaging(): void {
+	const pending = db
+		.select()
+		.from(unmatchedFiles)
+		.where(and(eq(unmatchedFiles.tree, 'staging'), eq(unmatchedFiles.resolution, 'unresolved')))
+		.all();
+	for (const file of pending) {
+		onFileSeen(file.path, relative(serverEnv.STAGING_PATH, file.path), 'staging');
+	}
 }

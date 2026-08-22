@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from '$lib/server/db/client';
-import { discs } from '$lib/server/db/schema';
+import { discs, unmatchedFiles } from '$lib/server/db/schema';
 
 const testDb = createDb(':memory:');
 migrate(testDb, { migrationsFolder: 'drizzle' });
 
 vi.mock('$lib/server/db', () => ({ db: testDb }));
+
+const mockEnv: Record<string, string | undefined> = { STAGING_PATH: '/staging' };
+vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
 
 const { POST } = await import('./+server');
 
@@ -25,6 +28,7 @@ function makeDisc(overrides: Partial<typeof discs.$inferInsert> = {}) {
 
 afterEach(() => {
 	testDb.delete(discs).run();
+	testDb.delete(unmatchedFiles).run();
 });
 
 describe('POST /api/arm', () => {
@@ -70,5 +74,24 @@ describe('POST /api/arm', () => {
 		const rows = testDb.select().from(discs).all();
 		expect(rows.find((d) => d.id === first.id)?.armedAt).toBeNull();
 		expect(rows.find((d) => d.id === second.id)?.armedAt).not.toBeNull();
+	});
+
+	it('immediately links a staging folder that was already sitting unresolved before this disc was armed', async () => {
+		// e.g. a first rip attempt for a disc nobody had added/armed yet - see
+		// reconcile.ts's recheckUnresolvedStaging for why arming alone wouldn't
+		// otherwise trigger a re-match.
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: '/staging/CRIMINAL_MINDS_S3_D4', tree: 'staging', resolution: 'unresolved' })
+			.run();
+		const disc = makeDisc({ status: 'not_started' });
+
+		const response = await POST(makeRequest({ discId: disc.id }));
+		const data = await response.json();
+
+		expect(data.disc.status).toBe('ripping');
+		expect(data.disc.stagedPath).toBe('/staging/CRIMINAL_MINDS_S3_D4');
+		expect(data.disc.armedAt).toBeNull();
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 });

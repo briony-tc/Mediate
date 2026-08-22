@@ -9,7 +9,11 @@ migrate(testDb, { migrationsFolder: 'drizzle' });
 
 vi.mock('../db', () => ({ db: testDb }));
 
-const { onFileSeen, parseJellyfinPath, parseStagingPath } = await import('./reconcile');
+const mockEnv: Record<string, string | undefined> = { STAGING_PATH: '/staging' };
+vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
+
+const { onFileSeen, parseJellyfinPath, parseStagingPath, recheckUnresolvedStaging } =
+	await import('./reconcile');
 
 function seedDisc(overrides: Partial<typeof discs.$inferInsert> = {}) {
 	const [disc] = testDb
@@ -576,5 +580,67 @@ describe('onFileSeen - idempotency (applies to both trees)', () => {
 		const rows = testDb.select().from(unmatchedFiles).all();
 		expect(rows).toHaveLength(1);
 		expect(rows[0].id).toBe(existing.id);
+	});
+});
+
+describe('recheckUnresolvedStaging', () => {
+	it('links an armed disc to a staging folder that was recorded unresolved before the disc existed', () => {
+		// e.g. a first rip attempt for a disc nobody had added/armed yet - the
+		// folder sat unresolved, and the passive watcher never fires 'addDir'
+		// again for a path it's already seen once.
+		const absolute = '/staging/CRIMINAL_MINDS_S3_D4';
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'unresolved' })
+			.run();
+		const armed = seedDisc({
+			title: 'Criminal Minds',
+			mediaType: 'tv',
+			season: 3,
+			status: 'not_started',
+			armedAt: Date.now()
+		});
+
+		recheckUnresolvedStaging();
+
+		const updated = testDb
+			.select()
+			.from(discs)
+			.all()
+			.find((d) => d.id === armed.id);
+		expect(updated?.status).toBe('ripping');
+		expect(updated?.stagedPath).toBe(absolute);
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+	});
+
+	it('is a no-op when there are no unresolved staging entries', () => {
+		expect(() => recheckUnresolvedStaging()).not.toThrow();
+	});
+
+	it('does not touch unresolved jellyfin-tree entries', () => {
+		const absolute = '/jellyfin/movies/Something';
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'jellyfin', resolution: 'unresolved' })
+			.run();
+
+		recheckUnresolvedStaging();
+
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
+	it('leaves an already-resolved staging entry alone', () => {
+		const absolute = '/staging/Already Linked';
+		testDb
+			.insert(unmatchedFiles)
+			.values({ path: absolute, tree: 'staging', resolution: 'linked' })
+			.run();
+		seedDisc({ status: 'not_started', armedAt: Date.now() });
+
+		recheckUnresolvedStaging();
+
+		const rows = testDb.select().from(unmatchedFiles).all();
+		expect(rows).toHaveLength(1);
+		expect(rows[0].resolution).toBe('linked');
 	});
 });

@@ -3,6 +3,7 @@ import { and, eq, isNotNull, ne } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { discs } from '$lib/server/db/schema';
+import { recheckUnresolvedStaging } from '$lib/server/watcher/reconcile';
 
 /**
  * Marks a not_started disc as "the one about to be inserted" - the watcher's
@@ -39,12 +40,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		.where(and(isNotNull(discs.armedAt), ne(discs.id, discId)))
 		.run();
 
-	const [updated] = db
-		.update(discs)
-		.set({ armedAt: Date.now() })
-		.where(eq(discs.id, discId))
-		.returning()
-		.all();
+	db.update(discs).set({ armedAt: Date.now() }).where(eq(discs.id, discId)).run();
+
+	// Covers the disc having already had a staging folder sitting unresolved
+	// from an earlier rip attempt (made before this disc existed/was armed) -
+	// see recheckUnresolvedStaging's own comment for why arming alone
+	// wouldn't otherwise trigger a re-match. Re-fetch afterward since this can
+	// change the disc's own status/stagedPath (straight to 'ripping') instead
+	// of leaving it looking merely armed.
+	recheckUnresolvedStaging();
+	const updated = db.select().from(discs).where(eq(discs.id, discId)).get();
 
 	return json({ disc: updated });
 };
