@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from '$lib/server/db/client';
-import { discs, unmatchedFiles } from '$lib/server/db/schema';
+import { discs, pipelineEvents, unmatchedFiles } from '$lib/server/db/schema';
 
 const testDb = createDb(':memory:');
 migrate(testDb, { migrationsFolder: 'drizzle' });
@@ -50,6 +50,7 @@ afterEach(() => {
 	rmSync(join(stagingRoot, '..'), { recursive: true, force: true });
 	testDb.delete(unmatchedFiles).run();
 	testDb.delete(discs).run();
+	testDb.delete(pipelineEvents).run();
 });
 
 describe('POST /api/rip-complete', () => {
@@ -140,6 +141,15 @@ describe('POST /api/rip-complete', () => {
 
 		expect(data.outcome).toBe('needs_review');
 		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(1);
+	});
+
+	it('persists a pipeline event when falling through to needs_review', async () => {
+		await POST(makeRequest({ stagingFolderName: 'Some Unrecognized Disc' }));
+
+		const events = testDb.select().from(pipelineEvents).all();
+		expect(events).toHaveLength(1);
+		expect(events[0].kind).toBe('rip_needs_review');
+		expect(events[0].message).toContain('Some Unrecognized Disc');
 	});
 
 	it('flags a confidently-matched rip that fails to auto-file as needs_attention', async () => {

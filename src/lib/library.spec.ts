@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Disc } from '$lib/types';
 import {
 	filterDiscs,
+	formatStaleDuration,
 	growthBuckets,
+	isStaleRip,
 	mediaTypeCounts,
 	ownershipCounts,
 	sortDiscs,
@@ -252,5 +254,34 @@ describe('growthBuckets', () => {
 		const buckets = growthBuckets(discs, 5);
 		expect(buckets).toHaveLength(5);
 		expect(buckets.reduce((sum, b) => sum + b.count, 0)).toBe(1);
+	});
+});
+
+describe('isStaleRip', () => {
+	const now = 10_000_000;
+
+	it('is true for a ripping disc with no update in over 3 hours', () => {
+		const disc = makeDisc({ status: 'ripping', updatedAt: now - 4 * 60 * 60 * 1000 });
+		expect(isStaleRip(disc, now)).toBe(true);
+	});
+
+	it('is false for a ripping disc updated recently', () => {
+		const disc = makeDisc({ status: 'ripping', updatedAt: now - 5 * 60 * 1000 });
+		expect(isStaleRip(disc, now)).toBe(false);
+	});
+
+	it('is false for any other status regardless of how old updatedAt is', () => {
+		const disc = makeDisc({ status: 'not_started', updatedAt: now - 4 * 60 * 60 * 1000 });
+		expect(isStaleRip(disc, now)).toBe(false);
+	});
+});
+
+describe('formatStaleDuration', () => {
+	it('formats sub-hour durations in minutes', () => {
+		expect(formatStaleDuration(45 * 60 * 1000)).toBe('45m+');
+	});
+
+	it('formats hour-plus durations in hours', () => {
+		expect(formatStaleDuration(3 * 60 * 60 * 1000 + 20 * 60 * 1000)).toBe('3h+');
 	});
 });

@@ -3,7 +3,10 @@
 	import { DiscStore } from '$lib/stores/discs.svelte';
 	import {
 		filterDiscs,
+		formatStaleDuration,
+		isStaleRip,
 		ownershipLabel,
+		pipelineEventLabel,
 		sortDiscs,
 		statusClass,
 		statusLabel,
@@ -41,6 +44,13 @@
 	let unmatched = $state<typeof data.unmatchedFiles>([]);
 	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
 	unmatched = data.unmatchedFiles;
+	let pipelineEvents = $state<typeof data.pipelineEvents>([]);
+	// svelte-ignore state_referenced_locally -- intentional: seeds SSR output once, the $effect below keeps it in sync afterward
+	pipelineEvents = data.pipelineEvents;
+	// Ticks once a minute so isStaleRip(disc, now) below stays current without
+	// needing a page reload - staleness is purely a wall-clock comparison, not
+	// something an SSE event would ever announce on its own.
+	let now = $state(Date.now());
 
 	let disconnect: (() => void) | undefined;
 	// Per-unmatched-file disc picker selection - defaults to the auto-guess,
@@ -63,6 +73,7 @@
 	$effect(() => {
 		discStore.discs = data.discs;
 		unmatched = data.unmatchedFiles;
+		pipelineEvents = data.pipelineEvents;
 		seedSelection(data.unmatchedFiles);
 	});
 
@@ -94,8 +105,11 @@
 		pushEnabled = true;
 	}
 
+	let staleTickInterval: ReturnType<typeof setInterval> | undefined;
+
 	onMount(() => {
 		disconnect = discStore.connect();
+		staleTickInterval = setInterval(() => (now = Date.now()), 60_000);
 
 		if ('serviceWorker' in navigator && 'PushManager' in window) {
 			pushSupported = true;
@@ -109,6 +123,7 @@
 
 	onDestroy(() => {
 		disconnect?.();
+		clearInterval(staleTickInterval);
 	});
 
 	function discTitle(id: number | null) {
@@ -201,6 +216,42 @@
 		}
 	}
 
+	// Separate pending/error state from pendingRemoveId below - resetting and
+	// removing are different destructive actions that can't both be pending
+	// for the same disc at once, but keeping them as distinct state avoids
+	// any temptation to overload one id for two different meanings.
+	let pendingResetId = $state<number | null>(null);
+	let resetErrors = $state<Record<number, string>>({});
+
+	async function resetDisc(discId: number) {
+		const response = await fetch('/api/unlink', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ discId })
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			// Left open (not cleared) so the 409 safety-check message stays
+			// visible instead of silently reverting to the normal action row.
+			resetErrors = { ...resetErrors, [discId]: data.error };
+			return;
+		}
+		discStore.discs = discStore.discs.map((d) => (d.id === discId ? data.disc : d));
+		pendingResetId = null;
+		delete resetErrors[discId];
+	}
+
+	async function dismissPipelineEvent(id: number) {
+		const response = await fetch('/api/pipeline-event-dismiss', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ pipelineEventId: id })
+		});
+		if (response.ok) {
+			pipelineEvents = pipelineEvents.filter((e) => e.id !== id);
+		}
+	}
+
 	// Inline confirm step rather than a native confirm() dialog - only one
 	// disc's confirmation shows at a time.
 	let pendingRemoveId = $state<number | null>(null);
@@ -242,6 +293,31 @@
 			<button class="mt-2 rounded-md border px-3 py-1 text-sm" onclick={() => unarm(armedDisc!.id)}>
 				Cancel
 			</button>
+		</section>
+	{/if}
+
+	{#if pipelineEvents.length > 0}
+		<section class="space-y-3">
+			<h2 class="text-lg font-medium">Recent issues ({pipelineEvents.length})</h2>
+			<ul class="space-y-2">
+				{#each pipelineEvents as event (event.id)}
+					<li
+						class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/40"
+					>
+						<p class="text-sm font-medium">{pipelineEventLabel[event.kind]}</p>
+						<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400">{event.message}</p>
+						<p class="mt-1 text-xs text-gray-500">
+							{new Date(event.createdAt).toLocaleString()}
+						</p>
+						<button
+							class="mt-2 rounded-md border px-3 py-1 text-sm"
+							onclick={() => dismissPipelineEvent(event.id)}
+						>
+							Dismiss
+						</button>
+					</li>
+				{/each}
+			</ul>
 		</section>
 	{/if}
 
@@ -352,6 +428,14 @@
 									{ownershipLabel[disc.ownership]}
 								</span>
 							{/if}
+							{#if isStaleRip(disc, now)}
+								<span
+									class="mt-1 ml-1 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+									title="No progress update in a while - a single long title can legitimately take hours, but if the disc looks stuck, Reset lets you start over."
+								>
+									⚠ No update in {formatStaleDuration(now - disc.updatedAt)}
+								</span>
+							{/if}
 							{#if discStore.progressLog[disc.id]?.length}
 								<div
 									class="mt-1.5 max-w-xs space-y-0.5 rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1.5 dark:border-blue-900 dark:bg-blue-950/40"
@@ -384,6 +468,47 @@
 									Cancel
 								</button>
 							</div>
+						{:else if pendingResetId === disc.id}
+							<div class="flex max-w-xs flex-col items-end gap-1 text-sm">
+								<span class="text-right text-gray-500">
+									{#if disc.status === 'ripping'}
+										Only do this if the rip is actually stuck - if it's genuinely still ripping,
+										this will be refused.
+									{:else if disc.status === 'staged'}
+										The ripped file itself is untouched - you'll just lose rip-progress tracking and
+										can re-match it later.
+									{:else if disc.mediaType === 'tv'}
+										This won't touch the filed episode(s) - if you're redoing this disc, delete its
+										old episode file(s) in Jellyfin first, or the re-rip will file as new duplicate
+										episode numbers instead of replacing them.
+									{:else}
+										The filed movie file is untouched - re-ripping will safely overwrite it at the
+										same filename.
+									{/if}
+								</span>
+								{#if resetErrors[disc.id]}
+									<span class="text-right text-xs text-red-600 dark:text-red-400"
+										>{resetErrors[disc.id]}</span
+									>
+								{/if}
+								<div class="flex items-center gap-2">
+									<button
+										class="rounded-md border border-red-600 px-2 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+										onclick={() => resetDisc(disc.id)}
+									>
+										Confirm reset
+									</button>
+									<button
+										class="rounded-md border px-2 py-1"
+										onclick={() => {
+											pendingResetId = null;
+											delete resetErrors[disc.id];
+										}}
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
 						{:else}
 							<div class="flex items-center gap-2">
 								{#if disc.armedAt !== null}
@@ -408,6 +533,14 @@
 											Start ripping
 										</button>
 									{/if}
+								{/if}
+								{#if disc.status === 'ripping' || disc.status === 'staged' || disc.status === 'complete'}
+									<button
+										class="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+										onclick={() => (pendingResetId = disc.id)}
+									>
+										Reset
+									</button>
 								{/if}
 								<button
 									class="rounded-md border p-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:hover:bg-gray-800"

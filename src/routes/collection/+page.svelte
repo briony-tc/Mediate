@@ -312,9 +312,12 @@
 			</button>
 		</div>
 		<p class="mt-2 text-sm text-gray-500">
-			Undoes a bad match (e.g. an extras subfolder linked instead of the movie's own folder) -
-			resets the title to Not started and puts the wrongly-linked file back under Rip Queue's "Needs
-			attention" so you can link the right one instead.
+			Undoes a bad match (e.g. an extras subfolder linked instead of the movie's own folder), or
+			restarts a rip you want to redo - resets the title to Not started. For a bad match, the
+			wrongly-linked file goes back under Rip Queue's "Needs attention" so you can link the right
+			one instead. For a TV title you're redoing from scratch, delete its old episode file(s) in
+			Jellyfin first - this doesn't touch them, and a re-rip will file new episode numbers on top
+			instead of replacing them.
 		</p>
 		<input
 			type="text"

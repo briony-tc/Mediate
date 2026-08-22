@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from './db/client';
-import { discs } from './db/schema';
+import { discs, pipelineEvents, unmatchedFiles } from './db/schema';
 
 const testDb = createDb(':memory:');
 migrate(testDb, { migrationsFolder: 'drizzle' });
@@ -45,6 +45,8 @@ beforeEach(() => {
 afterEach(() => {
 	rmSync(join(stagingFolder, '..'), { recursive: true, force: true });
 	testDb.delete(discs).run();
+	testDb.delete(unmatchedFiles).run();
+	testDb.delete(pipelineEvents).run();
 });
 
 describe('promoteToJellyfin - movies', () => {
@@ -206,6 +208,64 @@ describe('promoteToJellyfin - tv', () => {
 			'Breaking Bad - S01E02.mkv',
 			'Breaking Bad - S01E03.mkv'
 		]);
+	});
+
+	it('excludes a dramatically-smaller title from episode numbering and leaves it for manual review', () => {
+		// e.g. Criminal Minds S3D3: 4 real ~40min episodes plus a ~12min "next
+		// time on" reel that cleared auto-rip.sh's own length filter.
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x'.repeat(1000));
+		writeFileSync(join(stagingFolder, 'title_t01.mkv'), 'x'.repeat(1000));
+		writeFileSync(join(stagingFolder, 'title_t02.mkv'), 'x'.repeat(1000));
+		writeFileSync(join(stagingFolder, 'title_t03.mkv'), 'x'.repeat(300)); // the outlier
+		const disc = seedDisc({ title: 'Criminal Minds', mediaType: 'tv', season: 3 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const seasonDir = join(jellyfinRoot, 'tv', 'Criminal Minds', 'Season 3');
+		expect(readdirSync(seasonDir).sort()).toEqual([
+			'Criminal Minds - S03E01.mkv',
+			'Criminal Minds - S03E02.mkv',
+			'Criminal Minds - S03E03.mkv'
+		]);
+		expect(readdirSync(stagingFolder)).toEqual(['title_t03.mkv']);
+
+		const unmatched = testDb.select().from(unmatchedFiles).all();
+		expect(unmatched).toHaveLength(1);
+		expect(unmatched[0].path).toBe(join(stagingFolder, 'title_t03.mkv'));
+
+		const events = testDb.select().from(pipelineEvents).all();
+		expect(events).toHaveLength(1);
+		expect(events[0].kind).toBe('tv_bonus_content_excluded');
+	});
+
+	it('does not flag anything when there are fewer than 3 titles, even if sizes differ a lot', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x'.repeat(1000));
+		writeFileSync(join(stagingFolder, 'title_t01.mkv'), 'x'.repeat(50));
+		const disc = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		const seasonDir = join(jellyfinRoot, 'tv', 'Breaking Bad', 'Season 1');
+		expect(readdirSync(seasonDir).sort()).toEqual([
+			'Breaking Bad - S01E01.mkv',
+			'Breaking Bad - S01E02.mkv'
+		]);
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
+	});
+
+	it('does not flag anything when title sizes are all reasonably close', () => {
+		writeFileSync(join(stagingFolder, 'title_t00.mkv'), 'x'.repeat(1000));
+		writeFileSync(join(stagingFolder, 'title_t01.mkv'), 'x'.repeat(950));
+		writeFileSync(join(stagingFolder, 'title_t02.mkv'), 'x'.repeat(1050));
+		const disc = seedDisc({ title: 'Breaking Bad', mediaType: 'tv', season: 1 });
+
+		const result = promoteToJellyfin(disc, stagingFolder);
+
+		expect(result).toBe('promoted');
+		expect(readdirSync(join(jellyfinRoot, 'tv', 'Breaking Bad', 'Season 1'))).toHaveLength(3);
+		expect(testDb.select().from(unmatchedFiles).all()).toHaveLength(0);
 	});
 
 	it('flags for manual review (status -> staged) when the disc has no season', () => {

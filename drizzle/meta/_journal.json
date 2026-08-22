@@ -64,6 +64,13 @@
       "when": 1786621939161,
       "tag": "0008_black_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787404742742,
+      "tag": "0009_clammy_kabuki",
+      "breakpoints": true
     }
   ]
 }

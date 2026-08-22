@@ -3,6 +3,7 @@ import { relative, join } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { serverEnv } from '../env';
 import { onFileSeen, type Tree } from './reconcile';
+import { logPipelineEvent } from '../pipelineEvents';
 
 /**
  * Jellyfin's convention requires movies/<title>/ and tv/<title>/<season>/
@@ -12,11 +13,12 @@ import { onFileSeen, type Tree } from './reconcile';
  */
 function warnIfJellyfinPathMisconfigured(root: string) {
 	if (!existsSync(join(root, 'movies')) && !existsSync(join(root, 'tv'))) {
-		console.warn(
-			`[watcher] JELLYFIN_PATH ("${root}") has no "movies" or "tv" subfolder. ` +
-				'It must point directly at the folder that contains them - check for an extra ' +
-				'nesting level (e.g. a path ending one directory too high).'
-		);
+		const warning =
+			`JELLYFIN_PATH ("${root}") has no "movies" or "tv" subfolder. ` +
+			'It must point directly at the folder that contains them - check for an extra ' +
+			'nesting level (e.g. a path ending one directory too high).';
+		console.warn(`[watcher] ${warning}`);
+		logPipelineEvent('jellyfin_path_misconfigured', warning);
 	}
 }
 
@@ -28,11 +30,12 @@ function warnIfJellyfinPathMisconfigured(root: string) {
  */
 function warnIfStagingPathMisconfigured(root: string) {
 	if (!existsSync(root) || readdirSync(root).length === 0) {
-		console.warn(
-			`[watcher] STAGING_PATH ("${root}") does not exist or is empty. If this is a Docker ` +
-				'bind mount, a missing host source path is silently mounted as an empty directory ' +
-				'instead of erroring - double check the real host path is correct.'
-		);
+		const warning =
+			`STAGING_PATH ("${root}") does not exist or is empty. If this is a Docker ` +
+			'bind mount, a missing host source path is silently mounted as an empty directory ' +
+			'instead of erroring - double check the real host path is correct.';
+		console.warn(`[watcher] ${warning}`);
+		logPipelineEvent('staging_path_misconfigured', warning);
 	}
 }
 

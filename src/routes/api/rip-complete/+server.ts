@@ -9,6 +9,7 @@ import { isAuthorizedRipWebhook } from '$lib/server/webhookAuth';
 import { onFileSeen } from '$lib/server/watcher/reconcile';
 import { promoteToJellyfin } from '$lib/server/promote';
 import { notifyAll } from '$lib/server/push';
+import { logPipelineEvent } from '$lib/server/pipelineEvents';
 
 /**
  * Called by the auto-rip script on VIKI once `makemkvcon` exits successfully
@@ -72,10 +73,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	// reused MakeMKV folder name (two different discs sharing a volume label)
 	// silently blocking the armed fast-path via onFileSeen's alreadyLinked
 	// check (2026-08-21).
-	console.warn(
-		`[rip-complete] "${stagingFolderName}" (${absolutePath}) finished ripping but no disc ` +
-			'claimed it via onFileSeen - falling through to needs_review.'
-	);
+	const warning =
+		`"${stagingFolderName}" (${absolutePath}) finished ripping but no disc claimed it via ` +
+		'onFileSeen - falling through to needs_review.';
+	console.warn(`[rip-complete] ${warning}`);
+	logPipelineEvent('rip_needs_review', warning);
 	await notifyAll('Rip complete', `"${stagingFolderName}" ripped - needs manual match.`);
 	return json({ outcome: 'needs_review' });
 };

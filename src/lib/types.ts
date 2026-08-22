@@ -27,6 +27,20 @@ export type Disc = {
 	updatedAt: number;
 };
 
+export type PipelineEventKind =
+	| 'rip_needs_review'
+	| 'staging_path_misconfigured'
+	| 'jellyfin_path_misconfigured'
+	| 'tv_bonus_content_excluded';
+
+export type PipelineEvent = {
+	id: number;
+	kind: PipelineEventKind;
+	message: string;
+	createdAt: number;
+	dismissedAt: number | null;
+};
+
 export type StatusChangeEvent = {
 	discId: number;
 	status: DiscStatus;
