@@ -41,6 +41,17 @@
 	// blank/1 for the (overwhelmingly common) single-disc case.
 	let discCountInputs = $state<Record<number, number | undefined>>({});
 
+	// Lets a specific disc number be given on the very first add attempt, not
+	// just via the reactive discConflict retry below. Needed because that
+	// retry only ever appears when the *first* attempt 409s - and it only
+	// 409s when there's exactly one existing, not-yet-numbered disc for this
+	// title/season to conflict with. Once every existing disc already has an
+	// explicit number (e.g. discs 1/2/3/5 already added one at a time, no gap
+	// left null), a plain add for "one more disc" never conflicts - it just
+	// silently creates another discNumber-less row instead of ever offering a
+	// way to say "this is disc 4". Keyed by candidate id, same as discCountInputs.
+	let discNumberInputs = $state<Record<number, number | undefined>>({});
+
 	// Ownership to record for a given candidate - 'owned' by default, since a
 	// barcode scan or manual add is usually a physical disc in hand. Switch to
 	// 'wanted' for a wishlist entry with no disc yet, or 'digital_only' for
@@ -159,6 +170,7 @@
 		discConflict = null;
 		discNumberInput = 2;
 		discCountInputs = {};
+		discNumberInputs = {};
 		ownershipInputs = {};
 		previewUrls = {};
 		previewLoading = {};
@@ -290,7 +302,7 @@
 		confirmCandidate(
 			pendingCandidate,
 			seasonInput ?? null,
-			null,
+			discNumberInputs[pendingCandidate.id] ?? null,
 			discCountInputs[pendingCandidate.id],
 			ownershipInputs[pendingCandidate.id]
 		);
@@ -326,15 +338,17 @@
 
 		if (response.status === 409) {
 			status = 'idle';
-			if (discNumber !== null) {
-				// Already tried to add this exact disc number - nothing more to offer.
-				message = `Disc ${discNumber} of "${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
-				discConflict = null;
-				return;
-			}
-			message = `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
+			// Whether this was a plain add (discNumber null, conflicting with an
+			// existing not-yet-numbered disc) or a specific number that turned out
+			// to already exist, land in the same retry state either way - a wrong
+			// guess shouldn't be a dead end, just a reason to try a different
+			// number without losing your place.
+			message =
+				discNumber !== null
+					? `Disc ${discNumber} of "${candidate.name}"${season ? ` season ${season}` : ''} is already tracked - try a different disc number.`
+					: `"${candidate.name}"${season ? ` season ${season}` : ''} is already tracked.`;
 			discConflict = { candidate, season };
-			discNumberInput = 2;
+			discNumberInput = discNumber !== null ? discNumber + 1 : 2;
 			logSessionEntries([data.disc], true);
 			clearPendingAdd();
 			return;
@@ -460,6 +474,15 @@
 					placeholder="Discs (1)"
 					aria-label="Number of discs"
 					class="w-28 rounded-md border p-2"
+				/>
+				<input
+					type="number"
+					min="1"
+					bind:value={discNumberInputs[pendingCandidate.id]}
+					placeholder="Disc # (optional)"
+					aria-label="Disc number"
+					title="Only needed if this season already has other discs tracked - e.g. adding disc 4 of a set where 1-3 are already here."
+					class="w-36 rounded-md border p-2"
 				/>
 				<select
 					value={ownershipInputs[pendingCandidate.id] ?? 'owned'}
