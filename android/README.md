@@ -43,13 +43,9 @@ in the app's local `SharedPreferences`, never in the repo.
 
 1. Open the `android/` folder in Android Studio (`File → Open`, pick this
    directory — not the repo root).
-2. Let it sync. There's no `gradlew` wrapper jar checked in (it's a binary
-   this environment couldn't generate without Gradle installed); Android
-   Studio detects that and offers to generate/download it on first sync —
-   accept that prompt. If it doesn't offer, run `gradle wrapper` once
-   yourself if you have a standalone Gradle install, or use
-   `Tools → ... → Generate Gradle Wrapper`.
-3. With your phone connected, click **Run** (▶) targeting your device.
+2. Let it sync (the Gradle wrapper is checked in, so this should just work).
+3. With your phone connected, click **Run** (▶) targeting your device — or
+   from a terminal: `./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 4. On first launch, the app shows a plain "Server address" form. Enter your
    Mediate server's URL exactly as you'd type it in a browser (e.g.
    `https://mediate.example.com` or `http://192.168.1.50:3000`) and tap
