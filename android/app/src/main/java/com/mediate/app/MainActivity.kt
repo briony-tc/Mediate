@@ -67,14 +67,19 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun launchTwa(url: String) {
-		// Colors the status bar and gesture-nav bar to match the page's own
-		// background (see body's bg-white/dark:bg-gray-900 in layout.css and the
-		// #111827 theme-color already used in manifest.webmanifest/app.html) so
-		// they blend into the content instead of showing as a plain black bar
-		// above and below it. COLOR_SCHEME_SYSTEM follows the phone's system
-		// theme - it can't see the page's own in-app dark-mode toggle, since
-		// that's a click-time JS/localStorage choice the native side has no way
-		// to know about before the page has even loaded.
+		// Colors the status bar and gesture-nav bar to match the page (see
+		// body's bg-white/dark:bg-gray-900 in layout.css) instead of leaving
+		// them a mismatched near-black default. Confirmed on-device that a TWA
+		// does NOT dynamically pick up the page's own <meta name="theme-color">
+		// the way a regular Chrome tab does - without this, plain launch(Uri)
+		// left the bars a fixed dark default regardless of page content, even
+		// with a correct live theme-color value set. That in turn means this
+		// can only follow the *phone's* system light/dark setting
+		// (COLOR_SCHEME_SYSTEM), not this app's own independent in-page toggle
+		// (see $lib/theme.ts) - there's no channel from JS back to this native
+		// launch call to know that choice before the page has even loaded. In
+		// practice the two agree unless someone's deliberately overridden the
+		// in-app theme against their system setting.
 		val lightColors =
 			CustomTabColorSchemeParams.Builder()
 				.setToolbarColor(Color.WHITE)
