@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Without this, only system CAs are trusted for network requests made
+     outside the TWA (i.e. the widget's background HTTP fetch) - Chrome
+     itself trusts user-added certificates, which is why the app/TWA loads
+     fine while the widget failed with "Trust anchor for certification path
+     not found." Since this app only ever talks to the one server address
+     you type in yourself, trusting your own added certificates app-wide
+     poses no meaningful extra risk beyond what you already chose by adding
+     that certificate to the device. -->
+<network-security-config>
+	<base-config>
+		<trust-anchors>
+			<certificates src="system" />
+			<certificates src="user" />
+		</trust-anchors>
+	</base-config>
+</network-security-config>

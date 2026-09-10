@@ -6,6 +6,12 @@
    from prefers-color-scheme but overridable via the toggle in +layout.svelte. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* True only when running as an installed app (the Android TWA, or "Add to
+   Home Screen" on any platform) - false for a normal browser tab, which is
+   how +layout.svelte swaps the top text nav for a bottom icon tab bar
+   without touching the regular web experience. */
+@custom-variant standalone (@media (display-mode: standalone));
+
 @layer base {
 	:root {
 		color-scheme: light;

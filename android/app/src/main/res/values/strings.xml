@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="app_name">Mediate</string>
+	<string name="shortcut_settings_short">Settings</string>
+	<string name="shortcut_settings_long">Change Mediate server address</string>
+	<string name="hint_server_url">https://mediate.example.com</string>
+	<string name="label_server_url">Server address</string>
+	<string name="button_save">Save and open</string>
+	<string name="error_invalid_url">Enter a valid http:// or https:// address</string>
+	<string name="widget_nothing_in_progress">Nothing in progress</string>
+	<string name="widget_not_configured">Tap to set up</string>
+</resources>

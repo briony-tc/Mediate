@@ -247,7 +247,10 @@
 					{/if}
 					{#if linkableDiscs().length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-2">
-							<select bind:value={selectedDiscId[file.id]} class="rounded-md border p-1 text-sm">
+							<select
+								bind:value={selectedDiscId[file.id]}
+								class="min-w-0 flex-1 rounded-md border p-1 text-sm"
+							>
 								<option value={undefined}>Pick a disc…</option>
 								{#each linkableDiscs() as disc (disc.id)}
 									<option value={disc.id}>{discLabel(disc)}</option>
