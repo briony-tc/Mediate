@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+	<!-- Long-press the app icon -> "Settings" to change the server address
+	     later without uninstalling. MainActivity checks force_settings and
+	     shows the address form instead of launching straight into the TWA. -->
+	<shortcut
+		android:shortcutId="server_settings"
+		android:enabled="true"
+		android:icon="@mipmap/ic_launcher"
+		android:shortcutShortLabel="@string/shortcut_settings_short"
+		android:shortcutLongLabel="@string/shortcut_settings_long">
+		<intent
+			android:action="android.intent.action.VIEW"
+			android:targetPackage="com.mediate.app"
+			android:targetClass="com.mediate.app.MainActivity">
+			<extra
+				android:name="force_settings"
+				android:value="true" />
+		</intent>
+	</shortcut>
+</shortcuts>

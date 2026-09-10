@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis is 0 (disabled) - WidgetUpdateWorker drives refreshes
+     itself via WorkManager, which is more reliable than the OS's built-in
+     scheduler and lets RipStatusWidgetProvider trigger an immediate refresh
+     right after the widget is added instead of waiting out a full period. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+	android:minWidth="180dp"
+	android:minHeight="90dp"
+	android:updatePeriodMillis="0"
+	android:initialLayout="@layout/widget_rip_status"
+	android:resizeMode="horizontal|vertical"
+	android:widgetCategory="home_screen" />

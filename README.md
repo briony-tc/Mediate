@@ -69,6 +69,10 @@ See `.env.example` for the full list of variables and what each one is for.
 
 It was built against one specific homelab setup (MakeMKV running in a Docker container, Jellyfin on the same host) and is **not** a drop-in tool — every host-specific value (URLs, paths, drive/container names) is a config variable read from `scripts/auto-rip.conf` (copy `scripts/auto-rip.conf.example` and fill it in) rather than hardcoded, but you'll still need your own udev rule to trigger it and to adjust it for your own rip setup. The "arm a disc before inserting it, then match ripped output to it unconditionally" workflow (`POST /api/arm`) is the part worth reusing even if your rip pipeline looks nothing like this one.
 
+## Android app (optional)
+
+`android/` is a Trusted Web Activity wrapper — a real installed Android app around this same web app, with a home-screen widget showing the currently armed/in-progress rip and working push notifications (reusing the Web Push setup above, no Firebase/Google account needed). The server address is entered on-device, not baked into the repo. See [`android/README.md`](android/README.md) for build/run instructions.
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](LICENSE) — free to use, modify, and share for any noncommercial purpose. Get in touch if you want to discuss commercial use.
