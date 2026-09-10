@@ -36,7 +36,7 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<nav class="border-b p-4">
+<nav class="border-b border-gray-200 p-4 dark:border-gray-700">
 	<div class="mx-auto flex max-w-3xl items-center gap-4">
 		<!-- Web only - the installed app gets the same three destinations as a
 		     bottom icon tab bar instead (below), so this whole group is redundant
@@ -81,7 +81,7 @@
      bottom so it reads as a real tab bar rather than part of the page; the
      div above keeps it from covering the last bit of scrolled content. -->
 <nav
-	class="fixed inset-x-0 bottom-0 hidden border-t bg-white dark:border-gray-700 dark:bg-gray-900 standalone:flex"
+	class="fixed inset-x-0 bottom-0 hidden border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 standalone:flex"
 	style="padding-bottom: env(safe-area-inset-bottom)"
 >
 	{#each tabs as tab (tab.href)}
