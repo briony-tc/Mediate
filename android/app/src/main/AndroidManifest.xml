@@ -14,6 +14,14 @@
 		android:label="@string/app_name"
 		android:theme="@style/Theme.Mediate">
 
+		<!-- Digital Asset Links statement for a chromeless TWA window - value
+		     comes from the assetStatements manifest placeholder in
+		     app/build.gradle.kts (empty array "[]" if unset). Single-quoted
+		     so the JSON's own double quotes don't need XML-escaping. -->
+		<meta-data
+			android:name="asset_statements"
+			android:value='${assetStatements}' />
+
 		<activity
 			android:name=".MainActivity"
 			android:exported="true"

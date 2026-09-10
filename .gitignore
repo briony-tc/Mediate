@@ -8,3 +8,8 @@ build/
 *.db-shm
 scripts/auto-rip.conf
 .DS_Store
+
+# Digital Asset Links file for a chromeless TWA window - contains your own
+# domain + signing key fingerprint, not something the public repo can ship
+# generically. See android/README.md.
+static/.well-known/assetlinks.json
