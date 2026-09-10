@@ -11,10 +11,18 @@
 			// Mirrors the fallback logic in $lib/theme.ts - kept inline (not
 			// imported) because module scripts execute after the DOM is parsed,
 			// which would already be too late to avoid the flash.
+			//
+			// Also updates the theme-color meta tag's content, not just the html
+			// class - Chrome uses that meta tag to tint the Android status bar /
+			// gesture-nav bar, including inside the TWA, so a static value here
+			// would leave the status bar always dark regardless of which theme is
+			// actually showing.
 			(function () {
 				var stored = localStorage.getItem('theme');
 				var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
 				document.documentElement.classList.toggle('dark', dark);
+				var meta = document.querySelector('meta[name="theme-color"]');
+				if (meta) meta.setAttribute('content', dark ? '#111827' : '#ffffff');
 			})();
 		</script>
 		%sveltekit.head%

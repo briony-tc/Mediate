@@ -1,11 +1,16 @@
 package com.mediate.app
 
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabColorSchemeParams
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.browser.trusted.TrustedWebActivityIntentBuilder
+import com.google.androidbrowserhelper.trusted.QualityEnforcer
 import com.google.androidbrowserhelper.trusted.TwaLauncher
 
 /**
@@ -62,11 +67,37 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun launchTwa(url: String) {
-		// launch(Uri) already falls back to a plain Custom Tab if no
-		// TWA-capable browser is available, so no manual fallback is needed.
+		// Colors the status bar and gesture-nav bar to match the page's own
+		// background (see body's bg-white/dark:bg-gray-900 in layout.css and the
+		// #111827 theme-color already used in manifest.webmanifest/app.html) so
+		// they blend into the content instead of showing as a plain black bar
+		// above and below it. COLOR_SCHEME_SYSTEM follows the phone's system
+		// theme - it can't see the page's own in-app dark-mode toggle, since
+		// that's a click-time JS/localStorage choice the native side has no way
+		// to know about before the page has even loaded.
+		val lightColors =
+			CustomTabColorSchemeParams.Builder()
+				.setToolbarColor(Color.WHITE)
+				.setNavigationBarColor(Color.WHITE)
+				.build()
+		val darkColors =
+			CustomTabColorSchemeParams.Builder()
+				.setToolbarColor(Color.parseColor("#111827"))
+				.setNavigationBarColor(Color.parseColor("#111827"))
+				.build()
+		val builder =
+			TrustedWebActivityIntentBuilder(Uri.parse(url))
+				.setColorScheme(CustomTabsIntent.COLOR_SCHEME_SYSTEM)
+				.setColorSchemeParams(CustomTabsIntent.COLOR_SCHEME_LIGHT, lightColors)
+				.setColorSchemeParams(CustomTabsIntent.COLOR_SCHEME_DARK, darkColors)
+
+		// Mirrors TwaLauncher.launch(Uri)'s own default (QualityEnforcer, plain
+		// Custom Tab fallback if no TWA-capable browser is available) - just
+		// with the color scheme params attached, which that shorthand doesn't
+		// take.
 		val launcher = TwaLauncher(this)
 		twaLauncher = launcher
-		launcher.launch(Uri.parse(url))
+		launcher.launch(builder, QualityEnforcer(), null, null)
 	}
 
 	companion object {
