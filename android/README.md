@@ -73,19 +73,61 @@ about it.
 
 ## Optional: a fully chromeless window
 
-Without any extra setup, the TWA shows a slim Chrome toolbar the first time
-(and briefly on each cold start) while it verifies your site. To make that
-verification succeed and get a completely chromeless window every time,
-host a [Digital Asset Links](https://developer.android.com/training/app-links/verify-android-applinks#web-assoc)
-file at `https://<your-server>/.well-known/assetlinks.json` declaring this
-app's package (`com.mediate.app`) and your signing key's SHA-256
-fingerprint, matching
-[Google's TWA quickstart](https://developer.chrome.com/docs/android/trusted-web-activity/quick-start#creating_your_asset_link_file).
+Without any extra setup, the TWA shows a slim Chrome toolbar every launch
+while it verifies your site. Fixing that needs two pieces, both inherently
+specific to _your_ domain and _your_ signing key, so neither is baked into
+the repo — the app defaults to `[]` (no trusted origins) and behaves
+exactly as it does today until you set them up.
 
-This is inherently specific to _your_ domain and _your_ signing key, so
-it's not something this repo can ship generically — it's a one-time file
-you host yourself if you want the fully chromeless look. Everything else
-(the app itself, push, the widget) works identically with or without it.
+1. **Tell the app which host to trust.** Add a line to
+   `android/local.properties` (already gitignored, per-machine):
+
+   ```
+   mediate.serverHost=mediate.example.com
+   ```
+
+   `app/build.gradle.kts` reads this and injects it into the manifest as an
+   `asset_statements` entry at build time - rebuild and reinstall after
+   adding it.
+
+2. **Tell your server which app to trust.** Get your signing key's SHA-256
+   fingerprint - for a debug build, that's:
+
+   ```
+   keytool -list -v -keystore ~/.android/debug.keystore \
+     -alias androiddebugkey -storepass android -keypass android
+   ```
+
+   (a real release build uses whatever keystore you sign it with instead).
+   Create `static/.well-known/assetlinks.json` in this repo's checkout
+   (gitignored - it won't show up in `git status`) with:
+
+   ```json
+   [
+   	{
+   		"relation": ["delegate_permission/common.handle_all_urls"],
+   		"target": {
+   			"namespace": "android_app",
+   			"package_name": "com.mediate.app",
+   			"sha256_cert_fingerprints": ["<your fingerprint>"]
+   		}
+   	}
+   ]
+   ```
+
+   Since `static/` is served as-is by SvelteKit, this becomes reachable at
+   `https://<your-server>/.well-known/assetlinks.json` once deployed -
+   which means it needs to actually reach whichever server you type into
+   the app (rebuild/redeploy the real server, not just save the file
+   locally, if your dev checkout and your running Mediate instance are
+   different places).
+
+Chrome verifies this the first time it loads the app after both sides are
+in place (it fetches assetlinks.json itself, directly, the same way any
+browser request would - no public internet reachability required beyond
+whatever your phone can already reach on your home network). If a debug
+key ever gets replaced by a real release signing key, the fingerprint in
+`assetlinks.json` needs updating to match.
 
 ## If you fork this for your own server
 
