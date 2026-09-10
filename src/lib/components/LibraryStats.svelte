@@ -71,7 +71,11 @@
 	];
 </script>
 
-<div class="viz-root space-y-6 rounded-md border p-4">
+<!-- overflow-x-clip: a centered tooltip on a bar segment near the card's
+     edge (see the four bottom-full/-translate-x-1/2 tooltips below) can
+     overshoot the viewport on narrow screens - clip it here rather than let
+     it create page-level horizontal scroll on mobile. -->
+<div class="viz-root space-y-6 overflow-x-clip rounded-md border p-4">
 	{#if counts.total === 0}
 		<p class="text-sm text-gray-500">Stats will appear once you've scanned a few discs.</p>
 	{:else}
