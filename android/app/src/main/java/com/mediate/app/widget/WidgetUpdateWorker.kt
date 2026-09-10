@@ -2,6 +2,7 @@ package com.mediate.app.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -28,6 +29,7 @@ class WidgetUpdateWorker(appContext: Context, params: WorkerParameters) :
 		val appWidgetManager = AppWidgetManager.getInstance(applicationContext)
 		val widgetIds =
 			appWidgetManager.getAppWidgetIds(RipStatusWidgetProvider.componentName(applicationContext))
+		Log.d(TAG, "doWork: ${widgetIds.size} widget(s) placed")
 		if (widgetIds.isEmpty()) return Result.success()
 
 		val serverUrl = ServerPrefs.getServerUrl(applicationContext)
@@ -52,19 +54,33 @@ class WidgetUpdateWorker(appContext: Context, params: WorkerParameters) :
 
 	private suspend fun fetchStatusText(serverUrl: String): String =
 		withContext(Dispatchers.IO) {
+			val requestUrl = "$serverUrl/api/widget/status"
 			try {
-				val connection = URL("$serverUrl/api/widget/status").openConnection() as HttpURLConnection
+				Log.d(TAG, "fetching $requestUrl")
+				val connection = URL(requestUrl).openConnection() as HttpURLConnection
 				connection.connectTimeout = 10_000
 				connection.readTimeout = 10_000
 				connection.requestMethod = "GET"
 
+				val responseCode = connection.responseCode
+				if (responseCode !in 200..299) {
+					Log.e(TAG, "fetch failed: HTTP $responseCode from $requestUrl")
+					connection.disconnect()
+					return@withContext "Can't reach server (HTTP $responseCode)"
+				}
+
 				val body = connection.inputStream.bufferedReader().use(BufferedReader::readText)
 				connection.disconnect()
+				Log.d(TAG, "fetch succeeded: $body")
 				parseStatusText(body)
 			} catch (e: Exception) {
-				// Most likely just "not on the home network right now" - not worth
-				// surfacing as an error, the widget just keeps its last-known text.
-				applicationContext.getString(R.string.widget_nothing_in_progress)
+				// Distinct from the genuine "server said nothing's happening" text
+				// below - this is "the request itself failed" (off the home
+				// network, DNS, timeout, etc.), which used to render identically
+				// to a real idle state, making failures silently indistinguishable
+				// from success.
+				Log.e(TAG, "fetch failed for $requestUrl", e)
+				"Can't reach server"
 			}
 		}
 
@@ -90,5 +106,6 @@ class WidgetUpdateWorker(appContext: Context, params: WorkerParameters) :
 	companion object {
 		const val REFRESH_INTERVAL_MINUTES = 30L
 		const val UNIQUE_WORK_NAME = "widget_status_refresh"
+		private const val TAG = "WidgetUpdateWorker"
 	}
 }
