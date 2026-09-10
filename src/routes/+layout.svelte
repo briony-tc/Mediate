@@ -13,6 +13,13 @@
 	onMount(() => {
 		initTheme();
 		dark = isDark();
+
+		// Push notifications (see enablePush() on the rip queue page) depend on
+		// this being registered first - SvelteKit builds src/service-worker.ts
+		// but never registers it for you.
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/service-worker.js');
+		}
 	});
 </script>
 
