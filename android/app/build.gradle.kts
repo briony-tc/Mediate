@@ -5,7 +5,7 @@ plugins {
 
 android {
 	namespace = "com.mediate.app"
-	compileSdk = 35
+	compileSdk = 36
 
 	defaultConfig {
 		applicationId = "com.mediate.app"
